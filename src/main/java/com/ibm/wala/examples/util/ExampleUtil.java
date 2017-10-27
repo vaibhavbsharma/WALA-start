@@ -22,8 +22,8 @@ public class ExampleUtil {
   		"com\\/ibm\\/crypto\\/.*\n" + 
   		"com\\/ibm\\/security\\/.*\n" + 
   		"org\\/apache\\/xerces\\/.*\n" + 
-  		"java\\/security\\/.*\n" + 
-  		"";
+  		"java\\/security\\/.*\n" +
+			"";
 
   public static void addDefaultExclusions(AnalysisScope scope) throws UnsupportedEncodingException, IOException {
 	    scope.setExclusions(new FileOfClasses(new ByteArrayInputStream(ExampleUtil.EXCLUSIONS.getBytes("UTF-8"))));

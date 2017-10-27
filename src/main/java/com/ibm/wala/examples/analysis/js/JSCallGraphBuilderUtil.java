@@ -43,6 +43,9 @@ import com.ibm.wala.util.collections.HashSetFactory;
 import com.ibm.wala.util.functions.Function;
 import com.ibm.wala.util.io.FileProvider;
 
+import static com.ibm.wala.cast.js.util.Util.*;
+import static com.ibm.wala.cast.util.Util.checkForFrontEndErrors;
+
 /**
  * TODO this class is a mess. rewrite.
  */
@@ -216,7 +219,7 @@ public class JSCallGraphBuilderUtil extends com.ibm.wala.cast.js.ipa.callgraph.J
   protected static JSCFABuilder makeCG(JavaScriptLoaderFactory loaders, AnalysisScope scope, CGBuilderType builderType, IRFactory<IMethod> irFactory) throws IOException, WalaException {
     try {
       IClassHierarchy cha = makeHierarchy(scope, loaders);
-      com.ibm.wala.cast.js.util.Util.checkForFrontEndErrors(cha);
+      checkForFrontEndErrors(cha);
       Iterable<Entrypoint> roots = makeScriptRoots(cha);
       JSAnalysisOptions options = makeOptions(scope, cha, roots);
       options.setHandleCallApply(builderType.handleCallApply());
