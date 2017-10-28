@@ -11,9 +11,9 @@
 package com.ibm.wala.examples.drivers;
 
 import java.io.*;
+import java.util.Iterator;
 import java.util.Properties;
 
-import com.ibm.wala.classLoader.IBytecodeMethod;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.core.tests.callGraph.CallGraphTestUtil;
 import com.ibm.wala.examples.properties.WalaExamplesProperties;
@@ -28,19 +28,25 @@ import com.ibm.wala.properties.WalaProperties;
 import com.ibm.wala.shrikeCT.ClassReader;
 import com.ibm.wala.shrikeCT.CodeReader;
 import com.ibm.wala.shrikeCT.LocalVariableTableReader;
-import com.ibm.wala.ssa.IR;
-import com.ibm.wala.ssa.SSACFG;
-import com.ibm.wala.ssa.SSAInstruction;
-import com.ibm.wala.ssa.SSAOptions;
+import com.ibm.wala.ssa.*;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.util.WalaException;
+import com.ibm.wala.util.collections.Iterator2Iterable;
 import com.ibm.wala.util.config.AnalysisScopeReader;
 import com.ibm.wala.util.debug.Assertions;
+import com.ibm.wala.util.graph.Graph;
+import com.ibm.wala.util.graph.NumberedGraph;
+import com.ibm.wala.util.graph.dominators.DominanceFrontiers;
+import com.ibm.wala.util.graph.dominators.Dominators;
+import com.ibm.wala.util.graph.dominators.GenericDominators;
+import com.ibm.wala.util.graph.dominators.NumberedDominators;
+import com.ibm.wala.util.graph.impl.GraphInverter;
 import com.ibm.wala.util.io.FileProvider;
 import com.ibm.wala.util.strings.StringStuff;
 import com.ibm.wala.viz.PDFViewUtil;
 import org.apache.commons.io.IOUtils;
 
+import static com.ibm.wala.util.graph.dominators.Dominators.make;
 import static com.sun.org.apache.xerces.internal.utils.SecuritySupport.getResourceAsStream;
 
 /**
@@ -182,6 +188,28 @@ public class MyPDFWalaIR {
           }
         }
       }
+      /* This tells us which node (N) strictly post-dominates which other nodes (N1, N2, ...), but it does not say it so
+      for all the nodes that N strictly post-dominates. e.g. BB9 strictly post-dominates BB4 but the output of this
+      implementation does not say so.
+      So, this isn't working out for us.
+      I think I should implement my own immediate post-dominator computation.
+      */
+      Graph<ISSABasicBlock> invertedCFG = GraphInverter.invert(cfg);
+      System.out.println("invertedCFG = " + invertedCFG.toString());
+      NumberedDominators<ISSABasicBlock> dom = (NumberedDominators<ISSABasicBlock>) Dominators.make(invertedCFG, cfg.exit());
+      Graph<ISSABasicBlock> dominatorTree = dom.dominatorTree();
+      System.out.println("dominatorTree = "+dominatorTree.toString());
+
+
+      for (int i = 0; i <= cfg.getMaxNumber(); i++) {
+        SSACFG.BasicBlock bb = cfg.getNode(i);
+        System.out.println("dominators for " + bb.toString() +":");
+        for (Iterator<ISSABasicBlock> it = dominatorTree.getSuccNodes(bb); it.hasNext(); ) {
+          SSACFG.BasicBlock bb_dom = (SSACFG.BasicBlock) it.next();
+          System.out.println(bb_dom);
+        }
+      }
+
 
       Properties wp = null;
       try {
