@@ -162,7 +162,6 @@ public class MyPDFWalaIR {
 
       System.err.println(ir.toString());
 
-
       SSACFG cfg = ir.getControlFlowGraph();
       for (int i = 0; i <= cfg.getMaxNumber(); i++) {
         SSACFG.BasicBlock bb = cfg.getNode(i);
@@ -199,14 +198,22 @@ public class MyPDFWalaIR {
       NumberedDominators<ISSABasicBlock> dom = (NumberedDominators<ISSABasicBlock>) Dominators.make(invertedCFG, cfg.exit());
       Graph<ISSABasicBlock> dominatorTree = dom.dominatorTree();
       System.out.println("dominatorTree = "+dominatorTree.toString());
+      System.out.println("-x-x-x-x-\n\n\n\n");
 
 
       for (int i = 0; i <= cfg.getMaxNumber(); i++) {
         SSACFG.BasicBlock bb = cfg.getNode(i);
-        System.out.println("dominators for " + bb.toString() +":");
+        /*System.out.println("dominators for " + bb.toString() +":");
         for (Iterator<ISSABasicBlock> it = dominatorTree.getSuccNodes(bb); it.hasNext(); ) {
           SSACFG.BasicBlock bb_dom = (SSACFG.BasicBlock) it.next();
           System.out.println(bb_dom);
+        }*/
+        for(int j=0; j <= cfg.getMaxNumber(); j++) {
+          SSACFG.BasicBlock bb1 = cfg.getNode(j);
+          if(bb1 == bb) continue;
+          if(dom.isDominatedBy(bb, bb1)) {
+            System.out.println(bb1.getNumber() + " dominates " + bb.getNumber());
+          }
         }
       }
 
