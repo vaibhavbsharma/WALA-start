@@ -11,6 +11,8 @@
 package com.ibm.wala.examples.drivers;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Properties;
 
@@ -201,6 +203,7 @@ public class MyPDFWalaIR {
       System.out.println("-x-x-x-x-\n\n\n\n");
 
 
+      ArrayList<String> domStr = new ArrayList<>();
       for (int i = 0; i <= cfg.getMaxNumber(); i++) {
         SSACFG.BasicBlock bb = cfg.getNode(i);
         /*System.out.println("dominators for " + bb.toString() +":");
@@ -212,11 +215,15 @@ public class MyPDFWalaIR {
           SSACFG.BasicBlock bb1 = cfg.getNode(j);
           if(bb1 == bb) continue;
           if(dom.isDominatedBy(bb, bb1)) {
-            System.out.println(bb1.getNumber() + " dominates " + bb.getNumber());
+            //System.out.println(bb1.getNumber() + " dominates " + bb.getNumber());
+            domStr.add(bb1.getNumber() + " dominates " + bb.getNumber());
           }
         }
       }
-
+      Collections.sort(domStr.subList(1, domStr.size()));
+      for(int i = 0; i < domStr.size(); i++) {
+        System.out.println(domStr.get(i));
+      }
 
       Properties wp = null;
       try {
