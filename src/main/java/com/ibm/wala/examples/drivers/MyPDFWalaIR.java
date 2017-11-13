@@ -11,10 +11,7 @@
 package com.ibm.wala.examples.drivers;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.Properties;
+import java.util.*;
 
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.core.tests.callGraph.CallGraphTestUtil;
@@ -46,6 +43,7 @@ import com.ibm.wala.util.graph.impl.GraphInverter;
 import com.ibm.wala.util.io.FileProvider;
 import com.ibm.wala.util.strings.StringStuff;
 import com.ibm.wala.viz.PDFViewUtil;
+import com.sun.xml.internal.xsom.impl.scd.Iterators;
 import org.apache.commons.io.IOUtils;
 
 import static com.ibm.wala.util.graph.dominators.Dominators.make;
@@ -189,13 +187,13 @@ public class MyPDFWalaIR {
           }
         }
       }
-      /* This tells us which node (N) strictly post-dominates which other nodes (N1, N2, ...), but it does not say it so
-      for all the nodes that N strictly post-dominates. e.g. BB9 strictly post-dominates BB4 but the output of this
-      implementation does not say so.
-      So, this isn't working out for us.
-      I think I should implement my own immediate post-dominator computation.
-      */
+      cfg.removeExceptionalEdgesToNode(cfg.exit().getNumber());
       Graph<ISSABasicBlock> invertedCFG = GraphInverter.invert(cfg);
+      Iterator<ISSABasicBlock> c = cfg.getExceptionalPredecessors(cfg.exit()).iterator();
+      while(c.hasNext()) {
+        System.out.println("exceptional predecessor: " + c.next());
+      }
+
       System.out.println("invertedCFG = " + invertedCFG.toString());
       NumberedDominators<ISSABasicBlock> dom = (NumberedDominators<ISSABasicBlock>) Dominators.make(invertedCFG, cfg.exit());
       Graph<ISSABasicBlock> dominatorTree = dom.dominatorTree();
@@ -219,6 +217,11 @@ public class MyPDFWalaIR {
             domStr.add(bb1.getNumber() + " dominates " + bb.getNumber());
           }
         }
+      }
+      for(int i=0; i <= cfg.getMaxNumber(); i++) {
+        ISSABasicBlock bb = cfg.getIPdom(i);
+        if(bb != null)
+          domStr.add("IPDom(" + i +") = " + bb.getNumber());
       }
       Collections.sort(domStr.subList(1, domStr.size()));
       for(int i = 0; i < domStr.size(); i++) {
