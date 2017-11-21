@@ -1,6 +1,9 @@
 package com.ibm.wala.examples.drivers;
+import com.ibm.wala.classLoader.IBytecodeMethod;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.core.tests.callGraph.CallGraphTestUtil;
+import com.ibm.wala.examples.util.MyIVisitor;
+import com.ibm.wala.examples.util.StringUtil;
 import com.ibm.wala.ipa.callgraph.AnalysisCacheImpl;
 import com.ibm.wala.ipa.callgraph.AnalysisOptions;
 import com.ibm.wala.ipa.callgraph.AnalysisScope;
@@ -9,16 +12,19 @@ import com.ibm.wala.ipa.callgraph.impl.Everywhere;
 import com.ibm.wala.ipa.cha.ClassHierarchy;
 import com.ibm.wala.ipa.cha.ClassHierarchyFactory;
 import com.ibm.wala.shrikeCT.InvalidClassFileException;
-import com.ibm.wala.ssa.IR;
-import com.ibm.wala.ssa.ISSABasicBlock;
-import com.ibm.wala.ssa.SSACFG;
-import com.ibm.wala.ssa.SSAOptions;
+import com.ibm.wala.ssa.*;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.util.WalaException;
 import com.ibm.wala.util.config.AnalysisScopeReader;
 import com.ibm.wala.util.debug.Assertions;
+import com.ibm.wala.util.graph.dominators.Dominators;
+import com.ibm.wala.util.graph.dominators.NumberedDominators;
 import com.ibm.wala.util.io.FileProvider;
 import com.ibm.wala.util.strings.StringStuff;
+import com.ibm.wala.examples.util.VarUtil;
+import sun.tools.jconsole.Plotter;
+import x10.wala.util.NatLoop;
+import x10.wala.util.NatLoopSolver;
 
 import java.io.IOException;
 import java.util.*;
@@ -36,8 +42,12 @@ public class VeritestingMain {
         SSACFG cfg;
         HashSet startingPointsHistory;
         String className, methodName;
+        VarUtil varUtil;
+        HashSet<NatLoop> loops;
+        IR ir;
         public MyAnalysis(String appJar, String methodSig) {
             try {
+                startingPointsHistory = new HashSet();
                 appJar = System.getenv("TARGET_CLASSPATH") + appJar;
                 AnalysisScope scope = AnalysisScopeReader.makeJavaBinaryAnalysisScope(appJar,
                         (new FileProvider()).getFile(CallGraphTestUtil.REGRESSION_EXCLUSIONS));
@@ -50,181 +60,125 @@ public class VeritestingMain {
                 AnalysisOptions options = new AnalysisOptions();
                 options.getSSAOptions().setPiNodePolicy(SSAOptions.getAllBuiltInPiNodes());
                 IAnalysisCacheView cache = new AnalysisCacheImpl(options.getSSAOptions());
-                IR ir = cache.getIR(m, Everywhere.EVERYWHERE);
+                ir = cache.getIR(m, Everywhere.EVERYWHERE);
                 if (ir == null) {
                     Assertions.UNREACHABLE("Null IR for " + m);
                 }
                 cfg = ir.getControlFlowGraph();
-                className = m.getClass().getName().toString();
+                className = m.getDeclaringClass().getName().toString();
                 methodName = m.getName().toString();
                 System.out.println("Starting analysis for " + methodName);
+                varUtil = new VarUtil(ir, className, methodName);
+                NumberedDominators<ISSABasicBlock> uninverteddom =
+                        (NumberedDominators<ISSABasicBlock>) Dominators.make(cfg, cfg.entry());
+                loops = new HashSet<>();
+                HashSet<Integer> visited = new HashSet<>();
+                NatLoopSolver.findAllLoops(cfg, uninverteddom,loops,visited,cfg.getNode(0));
                 doAnalysis(cfg.entry(), null);
-            } catch (WalaException|InvalidClassFileException|IOException e) {
+            } catch (WalaException|IOException|InvalidClassFileException e) {
                 e.printStackTrace();
             }
         }
 
-        private void printTags(Stmt stmt) {
-            Iterator tags_it = stmt.getTags().iterator();
-            while(tags_it.hasNext()) G.v().out.println(tags_it.next());
-            G.v().out.println("  end tags");
+        public boolean isLoopStart(ISSABasicBlock b) {
+            Iterator var1 = loops.iterator();
+
+            for(int var2 = 1; var1.hasNext(); ++var2) {
+                NatLoop var3 = (NatLoop)var1.next();
+                if(b == var3.getStart()) return true;
+            }
+            return false;
         }
 
-        public Unit getIPDom(Unit u) {
-            MHGPostDominatorsFinder m = new MHGPostDominatorsFinder(g);
-            Unit u_IPDom = (Unit) m.getImmediateDominator(u);
-            return u_IPDom;
-        }
-
-
-        public void printSPFExpr(String thenExpr, String elseExpr, final String thenPLAssignSPF, final String elsePLAssignSPF,
+        public void printSPFExpr(String thenExpr, String elseExpr,
+                                 final String thenPLAssignSPF, final String elsePLAssignSPF,
                                  String if_SPFExpr, String ifNot_SPFExpr,
-                                 Unit currUnit, Unit commonSucc) {
-            thenExpr = MyUtils.SPFLogicalAnd(thenExpr, thenPLAssignSPF);
-            elseExpr = MyUtils.SPFLogicalAnd(elseExpr, elsePLAssignSPF);
+                                 ISSABasicBlock currUnit, ISSABasicBlock commonSucc) throws InvalidClassFileException {
+            thenExpr = StringUtil.SPFLogicalAnd(thenExpr, thenPLAssignSPF);
+            elseExpr = StringUtil.SPFLogicalAnd(elseExpr, elsePLAssignSPF);
 
             // (If && thenExpr) || (ifNot && elseExpr)
             String pathExpr1 =
-                    MyUtils.SPFLogicalOr(
-                            MyUtils.SPFLogicalAnd(if_SPFExpr, thenExpr),
-                            MyUtils.SPFLogicalAnd(ifNot_SPFExpr, elseExpr));
+                    StringUtil.SPFLogicalOr(
+                            StringUtil.SPFLogicalAnd(if_SPFExpr, thenExpr),
+                            StringUtil.SPFLogicalAnd(ifNot_SPFExpr, elseExpr));
 
             final StringBuilder sB = new StringBuilder();
             final StringBuilder setSlotAttr_SB = new StringBuilder();
             final ArrayList<String> lhs_SB = new ArrayList();
-            commonSucc.apply(new AbstractStmtSwitch() {
-                public void caseAssignStmt(AssignStmt stmt) {
-                    String lhs = stmt.getLeftOp().toString();
-                    lhs_SB.add(lhs);
-                    String s_tmp = new String("sf.setSlotAttr("+
-                            lvt.getLocalVarSlot(lhs.substring(0,lhs.length()-2))+
-                            ", " + lhs + ");");
-                    setSlotAttr_SB.append(s_tmp);
-                    MyShimpleValueSwitch msvs = new MyShimpleValueSwitch(lvt);
-                    stmt.getRightOp().apply(msvs);
-                    String phiExpr0 = msvs.getArg0PhiExpr();
-                    String phiExpr1 = msvs.getArg1PhiExpr();
+            MyIVisitor myIVisitor = new MyIVisitor(varUtil);
+            commonSucc.iterator().next().visit(myIVisitor);
+            String phiExprSPF = myIVisitor.getPhiExprSPF(thenPLAssignSPF, elsePLAssignSPF);
+            int startingBC = ((IBytecodeMethod) (ir.getMethod())).getBytecodeIndex(currUnit.getLastInstructionIndex());
+            int endingBC = ((IBytecodeMethod) (ir.getMethod())).getBytecodeIndex(commonSucc.getFirstInstructionIndex());
 
-                    String phiExpr0_s = MyUtils.nCNLIE + lhs + ", EQ, " + phiExpr0 + ")";
-                    String phiExpr1_s = MyUtils.nCNLIE + lhs + ", EQ, " + phiExpr1 + ")";
-                    // (pathLabel == 1 && lhs == phiExpr0) || (pathLabel ==2 && lhs == phiExpr1)
-                    sB.append( MyUtils.SPFLogicalOr(
-                            MyUtils.SPFLogicalAnd( thenPLAssignSPF,
-                                    phiExpr0_s),
-                            MyUtils.SPFLogicalAnd( elsePLAssignSPF,
-                                    phiExpr1_s
-                            )));
-                }});
-            String startingInsn = currUnit.getTag("BytecodeOffsetTag").toString();
-            String endingInsn;
-            Unit savedCommonSucc = commonSucc;
-            while(true) {
-                Tag t = commonSucc.getTag("BytecodeOffsetTag");
-                if(t == null) {
-                    if(commonSucc != savedCommonSucc) {
-                        commonSucc.apply(new AbstractStmtSwitch() {
-                            public void caseAssignStmt(AssignStmt stmt) {
-                                String lhs = stmt.getLeftOp().toString();
-                                lhs_SB.add(lhs);
-                                String s_tmp = new String("\nsf.setSlotAttr("+
-                                        lvt.getLocalVarSlot(lhs.substring(0,lhs.length()-2))+
-                                        ", " + lhs + ");");
-                                setSlotAttr_SB.append(s_tmp);
-                                MyShimpleValueSwitch msvs = new MyShimpleValueSwitch(lvt);
-                                stmt.getRightOp().apply(msvs);
-                                String phiExpr0 = msvs.getArg0PhiExpr();
-                                String phiExpr1 = msvs.getArg1PhiExpr();
-
-                                String phiExpr0_s = MyUtils.nCNLIE + lhs + ", EQ, " + phiExpr0 + ")";
-                                String phiExpr1_s = MyUtils.nCNLIE + lhs + ", EQ, " + phiExpr1 + ")";
-                                // (pathLabel == 1 && lhs == phiExpr0) || (pathLabel ==2 && lhs == phiExpr1)
-                                String tmpStr = MyUtils.SPFLogicalAnd(sB.toString(),
-                                        MyUtils.SPFLogicalOr(
-                                                MyUtils.SPFLogicalAnd( thenPLAssignSPF,
-                                                        phiExpr0_s),
-                                                MyUtils.SPFLogicalAnd( elsePLAssignSPF,
-                                                        phiExpr1_s
-                                                )));
-                                sB.setLength(0);
-                                sB.append(tmpStr);
-                            }});
-                    }
-                    commonSucc = g.getUnexceptionalSuccsOf(commonSucc).get(0);
-                } else {
-                    endingInsn = t.toString();
-                    int eiSetupInsn = lvt.getSetupInsn(Integer.parseInt(endingInsn));
-                    if(eiSetupInsn!= -1) {
-                        endingInsn = Integer.toString(eiSetupInsn);
-                    }
-                    break;
-                }
-            }
-            String finalPathExpr = MyUtils.SPFLogicalAnd(pathExpr1, sB.toString());
-            // G.v().out.println("At offset = " + startingInsn +
+            String finalPathExpr = StringUtil.SPFLogicalAnd(pathExpr1, phiExprSPF);
+            // System.out.println("At offset = " + startingInsn +
             //     " finalPathExpr = "+finalPathExpr);
-            // G.v().out.println("lvt.usedLocalVars.size = " + lvt.usedLocalVars.size());
+            // System.out.println("lvt.usedLocalVars.size = " + lvt.usedLocalVars.size());
 
             // Generate the executeInstruction listener function
             String fn = "public void " + className +
-                    "_" + methodName + "_VT_" + startingInsn + "_" + endingInsn + "\n";
+                    "_" + methodName + "_VT_" + startingBC + "_" + endingBC + "\n";
             fn += " (VM vm, ThreadInfo ti, Instruction instructionToExecute) {\n";
-            fn += "  if(ti.getTopFrame().getPC().getPosition() == " + startingInsn + " && \n";
+            fn += "  if(ti.getTopFrame().getPC().getPosition() == " + startingBC + " && \n";
             fn += "     ti.getTopFrame().getMethodInfo().getName().equals(\"" + methodName + "\") && \n";
             fn += "     ti.getTopFrame().getClassInfo().getName().equals(\"" + className + "\")) {\n";
             fn += "    StackFrame sf = ti.getTopFrame();\n";
-            Iterator it = lvt.usedLocalVars.iterator();
+            Iterator it = varUtil.usedLocalVars.iterator();
             while(it.hasNext()) {
-                String s = (String) it.next();
-                int slot = lvt.getLocalVarSlot(s);
+                Integer s = (Integer) it.next();
+                int slot = varUtil.getLocalVarSlot(s);
                 if(slot!=-1) {
-                    fn += "    SymbolicInteger "+s+" = (SymbolicInteger) sf.getLocalAttr("+slot+");\n";
+                    fn += "    SymbolicInteger v"+s+" = (SymbolicInteger) sf.getLocalAttr("+slot+");\n";
                 }
             }
-            it = lvt.intermediateVars.iterator();
+            it = varUtil.intermediateVars.iterator();
             while(it.hasNext()) {
                 String s = (String) it.next();
-                fn += "    SymbolicInteger " + s + " = makeSymbolicInteger(ti.getEnv(), \"" + s + "\");\n";
+                fn += "    SymbolicInteger v" + s + " = makeSymbolicInteger(ti.getEnv(), \"v" + s + "\");\n";
             }
             for(int lhs_SB_i = 0; lhs_SB_i < lhs_SB.size(); lhs_SB_i++) {
                 String tmpStr = lhs_SB.get(lhs_SB_i);
                 fn += "    SymbolicInteger " + tmpStr + " = makeSymbolicInteger(ti.getEnv(), \"" + tmpStr + "\");\n";
             }
-            fn += "    SymbolicInteger pathLabel" + pathLabelVarNum + " = makeSymbolicInteger(ti.getEnv(), \"pathLabel" + pathLabelVarNum+ "\");\n";
+            fn += "    SymbolicInteger pathLabel" + pathLabelVarNum +
+                    " = makeSymbolicInteger(ti.getEnv(), \"pathLabel" + pathLabelVarNum+ "\");\n";
             fn += "    PathCondition pc;\n";
             fn += "    pc = ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).getCurrentPC();\n";
             fn += "    pc._addDet(new ComplexNonLinearIntegerConstraint(\n    " + finalPathExpr + "));\n";
             fn += "    " + setSlotAttr_SB.toString() + "\n";
             fn += "    Instruction insn=instructionToExecute;\n";
-            fn += "    while(insn.getPosition() != " + endingInsn + ") {\n";
+            fn += "    while(insn.getPosition() != " + endingBC + ") {\n";
             fn += "      if(insn instanceof GOTO)  insn = ((GOTO) insn).getTarget();\n";
             fn += "      else insn = insn.getNext();\n";
             fn += "    }";
-            if(!endingInsnsHash.contains(startingInsn))
+            if(!endingInsnsHash.contains(startingBC))
                 fn += "    sf.pop(); sf.pop();\n"; // popping the region's starting node (if stmt) operands
             fn += "    ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).setCurrentPC(pc);\n";
             fn += "    ti.setNextPC(insn);\n";
             fn += "  }\n";
             fn += "}\n";
 
-            G.v().out.println(fn);
-            endingInsnsHash.add(endingInsn);
+            System.out.println(fn);
+            endingInsnsHash.add(endingBC);
 
-            lvt.resetUsedLocalVars();
-            lvt.resetIntermediateVars();
+            varUtil.resetUsedLocalVars();
+            varUtil.resetIntermediateVars();
             pathLabelVarNum++;
         }
 
-        public void doAnalysis(ISSABasicBlock startingUnit, ISSABasicBlock endingUnit) {
-            G.v().out.println("Starting doAnalysis");
-            Unit currUnit = startingUnit;
-            MyStmtSwitch myStmtSwitch;
+        public void doAnalysis(ISSABasicBlock startingUnit, ISSABasicBlock endingUnit) throws InvalidClassFileException {
+            System.out.println("Starting doAnalysis");
+            ISSABasicBlock currUnit = startingUnit;
+            MyIVisitor myIVisitor;
             if(startingPointsHistory.contains(startingUnit)) return;
             while(true) {
                 if(currUnit == null || currUnit == endingUnit) break;
                 //printTags((Stmt)currUnit);
-                // G.v().out.println("BOTag = " + ((Stmt)currUnit).getTag("BytecodeOffsetTag"));
-                List<Unit> succs = g.getUnexceptionalSuccsOf(currUnit);
-                Unit commonSucc = getIPDom(currUnit);
+                // System.out.println("BOTag = " + ((Stmt)currUnit).getTag("BytecodeOffsetTag"));
+                List<ISSABasicBlock> succs = new ArrayList<>(cfg.getNormalSuccessors(currUnit));
+                ISSABasicBlock commonSucc = cfg.getIPdom(currUnit.getNumber());
                 if(succs.size()==1) {
                     currUnit = succs.get(0);
                     continue;
@@ -235,71 +189,83 @@ public class VeritestingMain {
                     break;
                 } else if(succs.size() == 2 && !startingPointsHistory.contains(currUnit)) {
                     startingPointsHistory.add(currUnit);
-                    lvt.resetUsedLocalVars();
-                    lvt.resetIntermediateVars();
-                    // G.v().out.printf("  #succs = %d\n", succs.size());
-                    myStmtSwitch = new MyStmtSwitch(lvt);
-                    currUnit.apply(myStmtSwitch);
-                    String if_SPFExpr = myStmtSwitch.getSPFExpr();
-                    String ifNot_SPFExpr = myStmtSwitch.getIfNotSPFExpr();
-                    Unit thenUnit = succs.get(0); //assuming this order for now
-                    Unit elseUnit = succs.get(1);
-                    Unit nextUnit = null;
-                    if(thenUnit == commonSucc) nextUnit = elseUnit;
-                    if(elseUnit == commonSucc) nextUnit = thenUnit;
-                    if(nextUnit != null) {
-                        doAnalysis(nextUnit, commonSucc);
-                        currUnit = commonSucc;
-                        continue;
+                    varUtil.resetUsedLocalVars();
+                    varUtil.resetIntermediateVars();
+                    // System.out.printf("  #succs = %d\n", succs.size());
+                    myIVisitor = new MyIVisitor(varUtil);
+                    currUnit.getLastInstruction().visit(myIVisitor);
+
+                    String if_SPFExpr = myIVisitor.getIfExprStr_SPF();
+                    String ifNot_SPFExpr = myIVisitor.getIfNotExprStr_SPF();
+                    ISSABasicBlock thenUnit = succs.get(0);
+                    ISSABasicBlock elseUnit = succs.get(1);
+                    if(isLoopStart(currUnit)) {
+                        doAnalysis(thenUnit, null);
+                        doAnalysis(elseUnit, null);
+                        return;
                     }
+
                     String thenExpr="", elseExpr="";
-                    final int thenPathLabel = MyUtils.getPathCounter();
-                    final int elsePathLabel = MyUtils.getPathCounter();
+                    final int thenPathLabel = StringUtil.getPathCounter();
+                    final int elsePathLabel = StringUtil.getPathCounter();
                     final String thenPLAssignSPF =
-                            MyUtils.nCNLIE + "pathLabel" + pathLabelVarNum +
+                            StringUtil.nCNLIE + "pathLabel" + pathLabelVarNum +
                                     ", EQ, new IntegerConstant(" + thenPathLabel + "))";
                     final String elsePLAssignSPF =
-                            MyUtils.nCNLIE + "pathLabel" + pathLabelVarNum +
+                            StringUtil.nCNLIE + "pathLabel" + pathLabelVarNum +
                                     ", EQ, new IntegerConstant(" + elsePathLabel + "))";
                     boolean canVeritest = true;
 
                     // Create thenExpr
                     while(thenUnit != commonSucc) {
-                        // G.v().out.println("BOTag = " + ((Stmt)thenUnit).getTag("BytecodeOffsetTag") +
+                        // System.out.println("BOTag = " + ((Stmt)thenUnit).getTag("BytecodeOffsetTag") +
                         //     ", h.size() = " + h.size());
-                        myStmtSwitch = new MyStmtSwitch(lvt);
-                        thenUnit.apply(myStmtSwitch);
-                        if(myStmtSwitch.getCanVeritest() == false || g.getUnexceptionalSuccsOf(thenUnit).size() > 1) {
-                            G.v().out.println("(thenUnit) Stmt " + thenUnit + " cannot veritest");
-                            canVeritest = false;
-                            break;
+                        Iterator<SSAInstruction> ssaInstructionIterator = thenUnit.iterator();
+                        while(ssaInstructionIterator.hasNext()) {
+                            myIVisitor = new MyIVisitor(varUtil);
+                            ssaInstructionIterator.next().visit(myIVisitor);
+                            if(!myIVisitor.canVeritest()) {
+                                canVeritest = false;
+                                System.out.println("Cannot veritest SSAInstruction: " + myIVisitor.getLastInstruction());
+                                break;
+                            }
+                            String thenExpr1 = myIVisitor.getSPFExpr();
+                            if(thenExpr1 != null && !thenExpr1.equals("")) {
+                                if (!thenExpr.equals(""))
+                                    thenExpr = StringUtil.SPFLogicalAnd(thenExpr, thenExpr1);
+                                else thenExpr = thenExpr1;
+                            }
                         }
-                        String thenExpr1 = myStmtSwitch.getSPFExpr();
-                        if(thenExpr1 != null && !thenExpr1.equals("")) {
-                            if (!thenExpr.equals(""))
-                                thenExpr = MyUtils.SPFLogicalAnd(thenExpr, thenExpr1);
-                            else thenExpr = thenExpr1;
-                        }
-                        thenUnit = g.getUnexceptionalSuccsOf(thenUnit).get(0);
+                        if(!canVeritest) break;
+                        if(cfg.getNormalSuccessors(thenUnit).size() > 1) { canVeritest = false; break; }
+                        thenUnit = cfg.getNormalSuccessors(thenUnit).iterator().next();
+
                         if(thenUnit == endingUnit) break;
                     }
-                    while(canVeritest && (elseUnit != commonSucc)) {
-                        // G.v().out.println("BOTag = " + ((Stmt)elseUnit).getTag("BytecodeOffsetTag") +
+                    // Create thenExpr
+                    while(canVeritest && elseUnit != commonSucc) {
+                        // System.out.println("BOTag = " + ((Stmt)elseUnit).getTag("BytecodeOffsetTag") +
                         //     ", h.size() = " + h.size());
-                        myStmtSwitch = new MyStmtSwitch(lvt);
-                        elseUnit.apply(myStmtSwitch);
-                        if(myStmtSwitch.getCanVeritest() == false || g.getUnexceptionalSuccsOf(elseUnit).size() > 1) {
-                            G.v().out.println("(elseUnit) Stmt " + elseUnit + " cannot veritest");
-                            canVeritest = false;
-                            break;
+                        Iterator<SSAInstruction> ssaInstructionIterator = elseUnit.iterator();
+                        while(ssaInstructionIterator.hasNext()) {
+                            myIVisitor = new MyIVisitor(varUtil);
+                            ssaInstructionIterator.next().visit(myIVisitor);
+                            if(!myIVisitor.canVeritest()) {
+                                canVeritest = false;
+                                System.out.println("Cannot veritest SSAInstruction: " + myIVisitor.getLastInstruction());
+                                break;
+                            }
+                            String thenExpr1 = myIVisitor.getSPFExpr();
+                            if(thenExpr1 != null && !thenExpr1.equals("")) {
+                                if (!thenExpr.equals(""))
+                                    thenExpr = StringUtil.SPFLogicalAnd(thenExpr, thenExpr1);
+                                else thenExpr = thenExpr1;
+                            }
                         }
-                        String elseExpr1 = myStmtSwitch.getSPFExpr();
-                        if(elseExpr1 != null && !elseExpr1.equals("")) {
-                            if (!elseExpr.equals(""))
-                                elseExpr = MyUtils.SPFLogicalAnd(elseExpr, elseExpr1);
-                            else elseExpr = elseExpr1;
-                        }
-                        elseUnit = g.getUnexceptionalSuccsOf(elseUnit).get(0);
+                        if(!canVeritest) break;
+                        if(cfg.getNormalSuccessors(elseUnit).size() > 1) { canVeritest = false; break; }
+                        elseUnit = cfg.getNormalSuccessors(elseUnit).iterator().next();
+
                         if(elseUnit == endingUnit) break;
                     }
 
@@ -309,13 +275,13 @@ public class VeritestingMain {
                                 if_SPFExpr, ifNot_SPFExpr, currUnit, commonSucc);
                     currUnit = commonSucc;
                 } else {
-                    G.v().out.println("more than 2 successors unhandled in stmt = " + currUnit);
+                    System.out.println("more than 2 successors unhandled in stmt = " + currUnit);
                     assert(false);
                 }
-                G.v().out.println();
+                System.out.println();
             } // end while(true)
             if(currUnit != null && currUnit != startingUnit && currUnit != endingUnit &&
-                    g.getUnexceptionalSuccsOf(currUnit).size()>0) doAnalysis(currUnit, endingUnit);
+                    cfg.getNormalSuccessors(currUnit).size()>0) doAnalysis(currUnit, endingUnit);
         } // end doAnalysis
 
     } // end MyAnalysis class

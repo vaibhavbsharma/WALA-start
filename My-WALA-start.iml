@@ -17,5 +17,6 @@
     <orderEntry type="library" name="com.ibm.wala.core.tests-1.4.4-SNAPSHOT-sources" level="project" />
     <orderEntry type="library" name="com.ibm.wala.shrike-1.4.4-SNAPSHOT-sources" level="project" />
     <orderEntry type="library" name="com.ibm.wala.cast.js.rhino-1.4.4-SNAPSHOT-sources" level="project" />
+    <orderEntry type="library" name="x10.wala_2.6.1.201706301709" level="project" />
   </component>
 </module>

@@ -31,15 +31,17 @@ import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.util.WalaException;
 import com.ibm.wala.util.config.AnalysisScopeReader;
 import com.ibm.wala.util.debug.Assertions;
+import com.ibm.wala.util.graph.dominators.Dominators;
+import com.ibm.wala.util.graph.dominators.NumberedDominators;
 import com.ibm.wala.util.io.FileProvider;
 import com.ibm.wala.util.strings.StringStuff;
 import com.ibm.wala.viz.PDFViewUtil;
 import org.apache.commons.io.IOUtils;
+import x10.wala.util.NatLoop;
+import x10.wala.util.NatLoopSolver;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Properties;
+import java.util.*;
 
 /**
  * This simple example application builds a WALA IR and fires off a PDF viewer to visualize a DOT representation.
@@ -161,19 +163,184 @@ public class MyPDFWalaIR {
 
       // Report local stack slot information (if it exists) for every WALA IR variable
       SSACFG cfg = ir.getControlFlowGraph();
-      for (int i = 0; i <= cfg.getMaxNumber(); i++) {
+      ir.visitAllInstructions(new SSAInstruction.Visitor() {
+        int count=0;
+        void getStackSlots(SSAInstruction ssaInstruction) {
+          count++;
+          for (int v = 0; v < ssaInstruction.getNumberOfUses(); v++) {
+            int valNum = ssaInstruction.getUse(v);
+            int[] localNumbers = ir.findLocalsForValueNumber(count, valNum);
+            if (localNumbers != null) {
+              for (int k = 0; k < localNumbers.length; k++) {
+                System.out.println("at pc(" + ssaInstruction +
+                        "), valNum(" + valNum + ") is local var(" + localNumbers[k] + ", " +
+                        ir.getSymbolTable().isConstant(valNum) + ") uses");
+              }
+            }
+          }
+          for (int v = 0; v < ssaInstruction.getNumberOfDefs(); v++) {
+            int valNum = ssaInstruction.getDef(v);
+            int[] localNumbers = ir.findLocalsForValueNumber(count, valNum);
+            if (localNumbers != null) {
+              for (int k = 0; k < localNumbers.length; k++) {
+                System.out.println("at pc(" + ssaInstruction +
+                        "), valNum(" + valNum + ") is local var(" + localNumbers[k] + ", " +
+                        ir.getSymbolTable().isConstant(valNum) + ") defs");
+              }
+            }
+          }
+        }
+        @Override
+        public void visitGoto(SSAGotoInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitGoto(instruction);
+        }
+
+        @Override
+        public void visitArrayLoad(SSAArrayLoadInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitArrayLoad(instruction);
+        }
+
+        @Override
+        public void visitArrayStore(SSAArrayStoreInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitArrayStore(instruction);
+        }
+
+        @Override
+        public void visitBinaryOp(SSABinaryOpInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitBinaryOp(instruction);
+        }
+
+        @Override
+        public void visitUnaryOp(SSAUnaryOpInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitUnaryOp(instruction);
+        }
+
+        @Override
+        public void visitConversion(SSAConversionInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitConversion(instruction);
+        }
+
+        @Override
+        public void visitComparison(SSAComparisonInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitComparison(instruction);
+        }
+
+        @Override
+        public void visitConditionalBranch(SSAConditionalBranchInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitConditionalBranch(instruction);
+        }
+
+        @Override
+        public void visitSwitch(SSASwitchInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitSwitch(instruction);
+        }
+
+        @Override
+        public void visitReturn(SSAReturnInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitReturn(instruction);
+        }
+
+        @Override
+        public void visitGet(SSAGetInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitGet(instruction);
+        }
+
+        @Override
+        public void visitPut(SSAPutInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitPut(instruction);
+        }
+
+        @Override
+        public void visitInvoke(SSAInvokeInstruction instruction) {
+          super.visitInvoke(instruction);
+        }
+
+        @Override
+        public void visitNew(SSANewInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitNew(instruction);
+        }
+
+        @Override
+        public void visitArrayLength(SSAArrayLengthInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitArrayLength(instruction);
+        }
+
+        @Override
+        public void visitThrow(SSAThrowInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitThrow(instruction);
+        }
+
+        @Override
+        public void visitMonitor(SSAMonitorInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitMonitor(instruction);
+        }
+
+        @Override
+        public void visitCheckCast(SSACheckCastInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitCheckCast(instruction);
+        }
+
+        @Override
+        public void visitInstanceof(SSAInstanceofInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitInstanceof(instruction);
+        }
+
+        @Override
+        public void visitPhi(SSAPhiInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitPhi(instruction);
+        }
+
+        @Override
+        public void visitPi(SSAPiInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitPi(instruction);
+        }
+
+        @Override
+        public void visitGetCaughtException(SSAGetCaughtExceptionInstruction instruction) {
+          getStackSlots(instruction);
+          super.visitGetCaughtException(instruction);
+        }
+
+        @Override
+        public void visitLoadMetadata(SSALoadMetadataInstruction instruction) {
+          count++;
+          super.visitLoadMetadata(instruction);
+        }
+      });
+      /* for (int i = 0; i <= cfg.getMaxNumber(); i++) {
         SSACFG.BasicBlock bb = cfg.getNode(i);
-        int start = bb.getFirstInstructionIndex();
-        int end = bb.getLastInstructionIndex();
-        SSAInstruction[] instructions = ir.getInstructions();
-        for (int j = start; j <= end; j++) {
-          if (instructions[j] != null) {
-            for (int v = 0; v < instructions[j].getNumberOfUses(); v++) {
-              int valNum = instructions[j].getUse(v);
+        List<SSAInstruction> instructions = bb.getAllInstructions();
+        for (int j = 0; j < instructions.size(); j++) {
+          if (instructions.get(j) != null) {
+            System.out.println("SSAInstruction = " + instructions.get(j));
+            for (int v = 0; v < instructions.get(j).getNumberOfUses(); v++) {
+              int valNum = instructions.get(j).getUse(v);
               int[] localNumbers = ir.findLocalsForValueNumber(j, valNum);
               if (localNumbers != null) {
                 for (int k = 0; k < localNumbers.length; k++) {
-                  System.out.println("at pc(" + j + "), valNum(" + valNum + ") is local var(" + localNumbers[k] + ")");
+                  System.out.println("at pc(" +
+                          instructions.get(j) +
+                          "), valNum(" + valNum + ") is local var(" + localNumbers[k] + ")");
                 }
               }
               if (ir.getLocalNames(j, valNum) != null) {
@@ -184,7 +351,7 @@ public class MyPDFWalaIR {
             }
           }
         }
-      }
+      }*/
       ArrayList<String> domStr = new ArrayList<>();
         /*cfg.removeExceptionalEdgesToNode(cfg.exit().getNumber());
         Graph<ISSABasicBlock> invertedCFG = GraphInverter.invert(cfg);
@@ -218,15 +385,31 @@ public class MyPDFWalaIR {
           }
         }*/
       // Report immediate post-dominator of every basic block
-      for (int i = 0; i <= cfg.getMaxNumber(); i++) {
-        ISSABasicBlock bb = cfg.getIPdom(i);
-        if (bb != null)
-          domStr.add("IPDom(" + i + ") = " + bb.getNumber());
+      Iterator<ISSABasicBlock> issaBasicBlockIterator = cfg.iterator();
+      while(issaBasicBlockIterator.hasNext()) {
+        ISSABasicBlock bb = issaBasicBlockIterator.next();
+        if (bb != null) {
+          domStr.add("IPDom(" + bb.getNumber() + ") = " + cfg.getIPdom(bb.getNumber()));
+          Iterator<SSAInstruction> iterator = bb.iterator();
+          System.out.println("BB(" + bb.getNumber() + ") instructions:");
+          while (iterator.hasNext()) {
+            System.out.println(iterator.next());
+          }
+        } else System.out.println("BB was null");
       }
       Collections.sort(domStr.subList(1, domStr.size()));
       for (int i = 0; i < domStr.size(); i++) {
         System.out.println(domStr.get(i));
       }
+
+      System.out.println("printing loops now");
+      NumberedDominators<ISSABasicBlock> uninverteddom = (NumberedDominators<ISSABasicBlock>) Dominators.make(cfg, cfg.entry());
+      HashSet<NatLoop> loops = new HashSet<>();
+      HashSet<Integer> visited = new HashSet<>();
+
+      NatLoopSolver.findAllLoops(cfg, uninverteddom,loops,visited,cfg.getNode(0));
+      NatLoopSolver.printAllLoops(loops);
+      System.out.println("printing loops done");
 
       Properties wp = null;
       try {
