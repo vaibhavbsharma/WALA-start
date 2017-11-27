@@ -13,10 +13,14 @@ public class VarUtil {
     public HashSet<Integer> usedLocalVars, intermediateVars;
     // Contains how many bytes before an if statement did its operands get populated
     HashMap<Integer, Integer> ifToSetup;
+    public HashSet<Integer> defLocalVars, defIntermediateVars;
+
     public VarUtil(IR _ir, String _className, String _methodName) {
         varsMap = new HashMap<> ();
         intermediateVars = new HashSet<Integer> ();
         usedLocalVars = new HashSet<Integer> ();
+        defLocalVars = new HashSet<>();
+        defIntermediateVars = new HashSet<>();
         ifToSetup = new HashMap<> ();
         className = _className;
         methodName = _methodName;
@@ -230,7 +234,20 @@ public class VarUtil {
     }
 
     public String getValueString(int use) {
-        return ir.getSymbolTable().isConstant(use) ? Integer.toString(ir.getSymbolTable().getIntValue(use)) : ir.getSymbolTable().getValueString(use);
+        return ir.getSymbolTable().isConstant(use) ?
+                "new IntegerConstant(" + Integer.toString(ir.getSymbolTable().getIntValue(use)) + ")" :
+                ir.getSymbolTable().getValueString(use);
     }
+
+    public void addDefVal(int def) {
+        if(isLocalVariable(def)) {
+            addDefLocalVar(def);
+        }
+        else addDefIntermediateVar(def);
+    }
+
+    private void addDefLocalVar(int def) { defLocalVars.add(def); }
+
+    private void addDefIntermediateVar(int def) { defIntermediateVars.add(def); }
 }
 

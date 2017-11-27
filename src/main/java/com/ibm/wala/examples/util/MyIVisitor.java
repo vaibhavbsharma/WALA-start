@@ -3,6 +3,8 @@ package com.ibm.wala.examples.util;
 import com.ibm.wala.shrikeBT.IConditionalBranchInstruction;
 import com.ibm.wala.ssa.*;
 
+import java.util.List;
+
 
 public class MyIVisitor implements SSAInstruction.IVisitor {
     boolean isPhiInstruction = false;
@@ -208,13 +210,15 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
         lastInstruction = instruction;
         assert(instruction.getNumberOfUses()==2);
         assert(instruction.getNumberOfDefs()==1);
-        phiExpr0 = varUtil.getValueString(instruction.getUse(0));
-        phiExpr1 = varUtil.getValueString(instruction.getUse(1));
+        //TODO: phiExpr1 is derived from use 0 for now, this is an ugly hack
+        // and may not always be correct
+        phiExpr1 = varUtil.getValueString(instruction.getUse(0));
+        phiExpr0 = varUtil.getValueString(instruction.getUse(1));
         phiExprLHS = varUtil.getValueString(instruction.getDef(0));
         assert(varUtil.ir.getSymbolTable().isConstant(instruction.getDef(0)) == false);
         varUtil.addVal(instruction.getUse(0));
         varUtil.addVal(instruction.getUse(1));
-        varUtil.addVal(instruction.getDef(0));
+        varUtil.addDefVal(instruction.getDef(0));
     }
 
     @Override
@@ -260,4 +264,5 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
                         phiExpr1_s
                 ));
     }
+
 }

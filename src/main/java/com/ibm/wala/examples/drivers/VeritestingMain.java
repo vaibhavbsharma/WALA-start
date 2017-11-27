@@ -65,7 +65,7 @@ public class VeritestingMain {
                     Assertions.UNREACHABLE("Null IR for " + m);
                 }
                 cfg = ir.getControlFlowGraph();
-                className = m.getDeclaringClass().getName().toString();
+                className = m.getDeclaringClass().getName().getClassName().toString();
                 methodName = m.getName().toString();
                 System.out.println("Starting analysis for " + methodName);
                 varUtil = new VarUtil(ir, className, methodName);
@@ -103,8 +103,7 @@ public class VeritestingMain {
                             StringUtil.SPFLogicalAnd(if_SPFExpr, thenExpr),
                             StringUtil.SPFLogicalAnd(ifNot_SPFExpr, elseExpr));
 
-            final StringBuilder sB = new StringBuilder();
-            final StringBuilder setSlotAttr_SB = new StringBuilder();
+            String setSlotAttr = new String();
             final ArrayList<String> lhs_SB = new ArrayList();
             MyIVisitor myIVisitor = new MyIVisitor(varUtil);
             commonSucc.iterator().next().visit(myIVisitor);
@@ -125,38 +124,57 @@ public class VeritestingMain {
             fn += "     ti.getTopFrame().getMethodInfo().getName().equals(\"" + methodName + "\") && \n";
             fn += "     ti.getTopFrame().getClassInfo().getName().equals(\"" + className + "\")) {\n";
             fn += "    StackFrame sf = ti.getTopFrame();\n";
-            Iterator it = varUtil.usedLocalVars.iterator();
+            Iterator<Integer> it = varUtil.usedLocalVars.iterator();
             while(it.hasNext()) {
-                Integer s = (Integer) it.next();
-                int slot = varUtil.getLocalVarSlot(s);
+                Integer integer = it.next();
+                int slot = varUtil.getLocalVarSlot(integer);
                 if(slot!=-1) {
-                    fn += "    SymbolicInteger v"+s+" = (SymbolicInteger) sf.getLocalAttr("+slot+");\n";
+                    fn += "    BinaryLinearIntegerExpression v"+integer+" = (BinaryLinearIntegerExpression) sf.getLocalAttr("+slot+");\n";
                 }
             }
             it = varUtil.intermediateVars.iterator();
             while(it.hasNext()) {
-                String s = (String) it.next();
-                fn += "    SymbolicInteger v" + s + " = makeSymbolicInteger(ti.getEnv(), \"v" + s + "\");\n";
+                String string = it.next().toString();
+                fn += "    SymbolicInteger v" + string + " = makeSymbolicInteger(ti.getEnv(), \"v" + string + "\" + pathLabelCount);\n";
+            }
+            it = varUtil.defIntermediateVars.iterator();
+            while(it.hasNext()) {
+                String string = it.next().toString();
+                fn += "    SymbolicInteger v" + string + " = makeSymbolicInteger(ti.getEnv(), \"v" + string + "\" + pathLabelCount);\n";
+            }
+            it = varUtil.defLocalVars.iterator();
+            while(it.hasNext()) {
+                Integer integer = it.next();
+                String string = integer.toString();
+                setSlotAttr += "    sf.setSlotAttr(" + varUtil.getLocalVarSlot(integer) + ",  v" + string + ");\n";
+                fn += "    SymbolicInteger v" + string + " = makeSymbolicInteger(ti.getEnv(), \"v" + string + "\" + pathLabelCount);\n";
             }
             for(int lhs_SB_i = 0; lhs_SB_i < lhs_SB.size(); lhs_SB_i++) {
                 String tmpStr = lhs_SB.get(lhs_SB_i);
-                fn += "    SymbolicInteger " + tmpStr + " = makeSymbolicInteger(ti.getEnv(), \"" + tmpStr + "\");\n";
+                fn += "    SymbolicInteger " + tmpStr + " = makeSymbolicInteger(ti.getEnv(), \"" + tmpStr + "\" + pathLabelCount);\n";
             }
             fn += "    SymbolicInteger pathLabel" + pathLabelVarNum +
-                    " = makeSymbolicInteger(ti.getEnv(), \"pathLabel" + pathLabelVarNum+ "\");\n";
+                    " = makeSymbolicInteger(ti.getEnv(), \"pathLabel" + pathLabelVarNum+ "\" + pathLabelCount);\n";
             fn += "    PathCondition pc;\n";
             fn += "    pc = ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).getCurrentPC();\n";
             fn += "    pc._addDet(new ComplexNonLinearIntegerConstraint(\n    " + finalPathExpr + "));\n";
-            fn += "    " + setSlotAttr_SB.toString() + "\n";
+            fn += "    " + setSlotAttr + "\n";
             fn += "    Instruction insn=instructionToExecute;\n";
             fn += "    while(insn.getPosition() != " + endingBC + ") {\n";
             fn += "      if(insn instanceof GOTO)  insn = ((GOTO) insn).getTarget();\n";
             fn += "      else insn = insn.getNext();\n";
-            fn += "    }";
-            if(!endingInsnsHash.contains(startingBC))
-                fn += "    sf.pop(); sf.pop();\n"; // popping the region's starting node (if stmt) operands
+            fn += "    }\n";
+            if(!endingInsnsHash.contains(startingBC)) {
+                fn += "    int numOperands = 0;\n";
+                fn += "    switch(ti.getTopFrame().getPC().getMnemonic()) {\n";
+                fn += "      case \"ifeq\" : numOperands = 1; break;\n";
+                fn += "      default : numOperands = 2; break;\n";
+                fn += "    }\n";
+                fn += "    while(numOperands > 0) { sf.pop(); numOperands--; }\n";
+            }
             fn += "    ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).setCurrentPC(pc);\n";
             fn += "    ti.setNextPC(insn);\n";
+            fn += "    pathLabelCount+=1;\n";
             fn += "  }\n";
             fn += "}\n";
 
