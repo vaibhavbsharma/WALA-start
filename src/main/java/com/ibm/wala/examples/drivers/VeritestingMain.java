@@ -123,7 +123,27 @@ public class VeritestingMain {
             fn += "  if(ti.getTopFrame().getPC().getPosition() == " + startingBC + " && \n";
             fn += "     ti.getTopFrame().getMethodInfo().getName().equals(\"" + methodName + "\") && \n";
             fn += "     ti.getTopFrame().getClassInfo().getName().equals(\"" + className + "\")) {\n";
-            fn += "    StackFrame sf = ti.getTopFrame();\n";
+            fn +=   "      StackFrame sf = ti.getTopFrame();\n" +
+                    "      InstructionInfo instructionInfo = new InstructionInfo(ti).invoke();\n" +
+                    "      Comparator trueComparator = instructionInfo.getTrueComparator();\n" +
+                    "      Comparator falseComparator = instructionInfo.getFalseComparator();\n" +
+                    "      int numOperands = instructionInfo.getNumOperands();\n" +
+                    "      PathCondition pc;\n" +
+                    "      pc = ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).getCurrentPC();\n" +
+                    "      PathCondition eqPC = pc.make_copy();\n" +
+                    "      PathCondition nePC = pc.make_copy();\n" +
+                    "      IntegerExpression sym_v = (IntegerExpression) sf.getOperandAttr();\n" +
+                    "      eqPC._addDet(trueComparator, sym_v, 0);\n" +
+                    "      nePC._addDet(falseComparator, sym_v, 0);\n" +
+                    "      boolean eqSat = eqPC.simplify();\n" +
+                    "      boolean neSat = nePC.simplify();\n" +
+                    "      if(!eqSat && !neSat) {\n" +
+                    "        System.out.println(\"both sides of branch at offset 11 are unsat\");\n" +
+                    "        assert(false);\n" +
+                    "      }\n" +
+                    "      if( (eqSat && !neSat) || (!eqSat && neSat)) {\n" +
+                    "        return;\n" +
+                    "      }\n";
             Iterator<Integer> it = varUtil.usedLocalVars.iterator();
             while(it.hasNext()) {
                 Integer integer = it.next();
@@ -155,8 +175,7 @@ public class VeritestingMain {
             }
             fn += "    SymbolicInteger pathLabel" + pathLabelVarNum +
                     " = makeSymbolicInteger(ti.getEnv(), \"pathLabel" + pathLabelVarNum+ "\" + pathLabelCount);\n";
-            fn += "    PathCondition pc;\n";
-            fn += "    pc = ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).getCurrentPC();\n";
+
             fn += "    pc._addDet(new ComplexNonLinearIntegerConstraint(\n    " + finalPathExpr + "));\n";
             fn += "    " + setSlotAttr + "\n";
             fn += "    Instruction insn=instructionToExecute;\n";
@@ -165,11 +184,6 @@ public class VeritestingMain {
             fn += "      else insn = insn.getNext();\n";
             fn += "    }\n";
             if(!endingInsnsHash.contains(startingBC)) {
-                fn += "    int numOperands = 0;\n";
-                fn += "    switch(ti.getTopFrame().getPC().getMnemonic()) {\n";
-                fn += "      case \"ifeq\" : numOperands = 1; break;\n";
-                fn += "      default : numOperands = 2; break;\n";
-                fn += "    }\n";
                 fn += "    while(numOperands > 0) { sf.pop(); numOperands--; }\n";
             }
             fn += "    ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).setCurrentPC(pc);\n";
