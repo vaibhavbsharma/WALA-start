@@ -13,26 +13,27 @@ public class VarUtil {
     public HashSet<Integer> usedLocalVars, intermediateVars;
     // Contains how many bytes before an if statement did its operands get populated
     HashMap<Integer, Integer> ifToSetup;
-    public HashSet<Integer> defLocalVars, defIntermediateVars;
+    public HashSet<Integer> defLocalVars;
+    private HashSet<Integer> conditionalVars;
+    public String nCNLIE;
 
     public VarUtil(IR _ir, String _className, String _methodName) {
+        nCNLIE = new String("new ComplexNonLinearIntegerExpression");
         varsMap = new HashMap<> ();
         intermediateVars = new HashSet<Integer> ();
         usedLocalVars = new HashSet<Integer> ();
         defLocalVars = new HashSet<>();
-        defIntermediateVars = new HashSet<>();
+        conditionalVars = new HashSet<>();
         ifToSetup = new HashMap<> ();
         className = _className;
         methodName = _methodName;
         ir = _ir;
         // Report local stack slot information (if it exists) for every WALA IR variable
-        _ir.visitAllInstructions(new SSAInstruction.Visitor() {
-            int count=0;
+        _ir.visitNormalInstructions(new SSAInstruction.Visitor() {
             void getStackSlots(SSAInstruction ssaInstruction) {
-                count++;
                 for (int v = 0; v < ssaInstruction.getNumberOfUses(); v++) {
                     int valNum = ssaInstruction.getUse(v);
-                    int[] localNumbers = _ir.findLocalsForValueNumber(count, valNum);
+                    int[] localNumbers = _ir.findLocalsForValueNumber(ssaInstruction.iindex, valNum);
                     if (localNumbers != null) {
                         for (int k = 0; k < localNumbers.length; k++) {
                             /*System.out.println("at pc(" + ssaInstruction +
@@ -43,16 +44,32 @@ public class VarUtil {
                         }
                     }
                 }
-                for (int v = 0; v < ssaInstruction.getNumberOfDefs(); v++) {
-                    int valNum = ssaInstruction.getDef(v);
-                    int[] localNumbers = _ir.findLocalsForValueNumber(count, valNum);
+                for (int def = 0; def < ssaInstruction.getNumberOfDefs(); def++) {
+                    int valNum = ssaInstruction.getDef(def);
+                    int[] localNumbers = _ir.findLocalsForValueNumber(ssaInstruction.iindex, valNum);
                     if (localNumbers != null) {
                         for (int k = 0; k < localNumbers.length; k++) {
                             /*System.out.println("at pc(" + ssaInstruction +
                                     "), valNum(" + valNum + ") is local var(" + localNumbers[k] + ", " +
                                     _ir.getSymbolTable().isConstant(valNum) + ") defs");*/
-                            if(!_ir.getSymbolTable().isConstant(valNum))
+                            if(!_ir.getSymbolTable().isConstant(valNum)) {
                                 varsMap.put(valNum, localNumbers[k]);
+                                // Assume var defined by phi instruction must be the same local variable as all its uses
+
+                            }
+                        }
+                    } else if(ssaInstruction instanceof SSAPhiInstruction){
+                        // Assume var defined by phi instruction must be the same local variable as one of its uses
+                        for(int use = 0; use < ssaInstruction.getNumberOfUses(); use++) {
+                            if(isLocalVariable(use)) {
+                                if(varsMap.containsKey(def)) {
+                                    System.out.println("Multiple local variables merged in SSAPhiInstruction at offset "
+                                            + ssaInstruction.iindex);
+                                    assert(false);
+                                } else {
+                                    varsMap.put(def, varsMap.get(use));
+                                }
+                            }
                         }
                     }
                 }
@@ -131,6 +148,7 @@ public class VarUtil {
 
             @Override
             public void visitInvoke(SSAInvokeInstruction instruction) {
+                getStackSlots(instruction);
                 super.visitInvoke(instruction);
             }
 
@@ -190,14 +208,62 @@ public class VarUtil {
 
             @Override
             public void visitLoadMetadata(SSALoadMetadataInstruction instruction) {
-                count++;
+                getStackSlots(instruction);
                 super.visitLoadMetadata(instruction);
             }
         });
+
+        boolean localVarUpdated;
+        do {
+            localVarUpdated = false;
+            Iterator<? extends SSAInstruction> phiIterator = _ir.iteratePhis();
+            while(phiIterator.hasNext()) {
+                SSAPhiInstruction phiInstruction = (SSAPhiInstruction) phiIterator.next();
+                for(int use = 0; use < phiInstruction.getNumberOfUses(); use++) {
+                    int valNum = phiInstruction.getUse(use);
+                    if(!isConstant(valNum) && varsMap.containsKey(valNum)) {
+                        localVarUpdated = updateLocalVarsForPhi(phiInstruction, valNum);
+                        break;
+                    }
+                }
+                if(localVarUpdated) continue;
+                for(int def = 0; def < phiInstruction.getNumberOfDefs(); def++) {
+                    int valNum = phiInstruction.getDef(def);
+                    if(!isConstant(valNum) && varsMap.containsKey(valNum)) {
+                        localVarUpdated = updateLocalVarsForPhi(phiInstruction, valNum);
+                        break;
+                    }
+                }
+            }
+        } while(localVarUpdated);
+    }
+
+    private boolean updateLocalVarsForPhi(SSAPhiInstruction phiInstruction, int val) {
+        boolean ret = false;
+        for(int use = 0; use < phiInstruction.getNumberOfUses(); use++) {
+            int useValNum = phiInstruction.getUse(use);
+            if(useValNum == val || isConstant(useValNum)) continue;
+            if(varsMap.containsKey(useValNum)) continue;
+            else {
+                varsMap.put(useValNum, varsMap.get(val));
+                ret = true;
+            }
+        }
+        for(int def = 0; def < phiInstruction.getNumberOfDefs(); def++) {
+            int defValNum = phiInstruction.getDef(def);
+            if(defValNum == val || isConstant(defValNum)) continue;
+            if(varsMap.containsKey(defValNum)) continue;
+            else {
+                varsMap.put(defValNum, varsMap.get(val));
+                ret = true;
+            }
+        }
+        return ret;
     }
 
     public void addVal(int val) {
         if(ir.getSymbolTable().isConstant(val)) return;
+        if(intermediateVars.contains(val) || defLocalVars.contains(val)) return;
         if(isLocalVariable(val)) addUsedLocalVar(val);
         else addIntermediateVar(val);
     }
@@ -205,18 +271,36 @@ public class VarUtil {
     public boolean isLocalVariable(int val) {
         return varsMap.containsKey(val);
     }
+
     public int getLocalVarSlot(int val) {
         if(isLocalVariable(val)) return varsMap.get(val);
         else return -1;
     }
+
     public void addUsedLocalVar(int varName) {
         usedLocalVars.add(varName);
         return;
     }
+
     public void addIntermediateVar(int varName) {
         intermediateVars.add(varName);
         return;
     }
+
+    public void addDefVal(int def) {
+        if(isLocalVariable(def)) {
+            addDefLocalVar(def);
+        }
+        else addIntermediateVar(def);
+    }
+
+    private void addDefLocalVar(int def) { defLocalVars.add(def); }
+
+    public void addConditionalVal(int use) {
+        if(ir.getSymbolTable().isConstant(use)) return;
+        conditionalVars.add(use);
+    }
+
     public void resetUsedLocalVars() {
         // G.v().out.println("resetUsedLocalVars");
         usedLocalVars = new HashSet<Integer> ();
@@ -239,15 +323,14 @@ public class VarUtil {
                 ir.getSymbolTable().getValueString(use);
     }
 
-    public void addDefVal(int def) {
-        if(isLocalVariable(def)) {
-            addDefLocalVar(def);
-        }
-        else addDefIntermediateVar(def);
+
+    public boolean isConstant(int operand1) {
+        return ir.getSymbolTable().isConstant(operand1);
     }
 
-    private void addDefLocalVar(int def) { defLocalVars.add(def); }
-
-    private void addDefIntermediateVar(int def) { defIntermediateVars.add(def); }
+    public String getConstant(int operand1) {
+        assert(isConstant(operand1));
+        return new String(Integer.toString(ir.getSymbolTable().getIntValue(operand1)));
+    }
 }
 

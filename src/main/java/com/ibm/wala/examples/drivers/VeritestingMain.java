@@ -92,7 +92,7 @@ public class VeritestingMain {
 
         public void printSPFExpr(String thenExpr, String elseExpr,
                                  final String thenPLAssignSPF, final String elsePLAssignSPF,
-                                 String if_SPFExpr, String ifNot_SPFExpr,
+                                 //String if_SPFExpr, String ifNot_SPFExpr,
                                  ISSABasicBlock currUnit, ISSABasicBlock commonSucc) throws InvalidClassFileException {
             thenExpr = StringUtil.SPFLogicalAnd(thenExpr, thenPLAssignSPF);
             elseExpr = StringUtil.SPFLogicalAnd(elseExpr, elsePLAssignSPF);
@@ -100,8 +100,8 @@ public class VeritestingMain {
             // (If && thenExpr) || (ifNot && elseExpr)
             String pathExpr1 =
                     StringUtil.SPFLogicalOr(
-                            StringUtil.SPFLogicalAnd(if_SPFExpr, thenExpr),
-                            StringUtil.SPFLogicalAnd(ifNot_SPFExpr, elseExpr));
+                            StringUtil.SPFLogicalAnd("condition", thenExpr),
+                            StringUtil.SPFLogicalAnd("negCondition", elseExpr));
 
             String setSlotAttr = new String();
             final ArrayList<String> lhs_SB = new ArrayList();
@@ -119,7 +119,7 @@ public class VeritestingMain {
             // Generate the executeInstruction listener function
             String fn = "public void " + className +
                     "_" + methodName + "_VT_" + startingBC + "_" + endingBC + "\n";
-            fn += " (VM vm, ThreadInfo ti, Instruction instructionToExecute) {\n";
+            fn += " (ThreadInfo ti, Instruction instructionToExecute) {\n";
             fn += "  if(ti.getTopFrame().getPC().getPosition() == " + startingBC + " && \n";
             fn += "     ti.getTopFrame().getMethodInfo().getName().equals(\"" + methodName + "\") && \n";
             fn += "     ti.getTopFrame().getClassInfo().getName().equals(\"" + className + "\")) {\n";
@@ -128,6 +128,9 @@ public class VeritestingMain {
                     "      Comparator trueComparator = instructionInfo.getTrueComparator();\n" +
                     "      Comparator falseComparator = instructionInfo.getFalseComparator();\n" +
                     "      int numOperands = instructionInfo.getNumOperands();\n" +
+                    "      ComplexNonLinearIntegerExpression condition = instructionInfo.getCondition();\n" +
+                    "      ComplexNonLinearIntegerExpression negCondition = instructionInfo.getNegCondition();\n" +
+                    "      if(condition == null || negCondition == null) return;\n" +
                     "      PathCondition pc;\n" +
                     "      pc = ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).getCurrentPC();\n" +
                     "      PathCondition eqPC = pc.make_copy();\n" +
@@ -149,48 +152,47 @@ public class VeritestingMain {
                 Integer integer = it.next();
                 int slot = varUtil.getLocalVarSlot(integer);
                 if(slot!=-1) {
-                    fn += "    BinaryLinearIntegerExpression v"+integer+" = (BinaryLinearIntegerExpression) sf.getLocalAttr("+slot+");\n";
+                    fn += "      IntegerExpression v"+integer+" = (IntegerExpression) sf.getLocalAttr("+slot+");\n";
+                    fn += "      if (v" + integer + " == null) {\n" +
+                          "        v" + integer + " = new IntegerConstant(sf.getLocalVariable(" + slot + "));\n" +
+                          "      }\n";
                 }
             }
             it = varUtil.intermediateVars.iterator();
             while(it.hasNext()) {
                 String string = it.next().toString();
-                fn += "    SymbolicInteger v" + string + " = makeSymbolicInteger(ti.getEnv(), \"v" + string + "\" + pathLabelCount);\n";
-            }
-            it = varUtil.defIntermediateVars.iterator();
-            while(it.hasNext()) {
-                String string = it.next().toString();
-                fn += "    SymbolicInteger v" + string + " = makeSymbolicInteger(ti.getEnv(), \"v" + string + "\" + pathLabelCount);\n";
+                fn += "      SymbolicInteger v" + string + " = makeSymbolicInteger(ti.getEnv(), \"v" + string + "\" + pathLabelCount);\n";
             }
             it = varUtil.defLocalVars.iterator();
             while(it.hasNext()) {
                 Integer integer = it.next();
                 String string = integer.toString();
-                setSlotAttr += "    sf.setSlotAttr(" + varUtil.getLocalVarSlot(integer) + ",  v" + string + ");\n";
-                fn += "    SymbolicInteger v" + string + " = makeSymbolicInteger(ti.getEnv(), \"v" + string + "\" + pathLabelCount);\n";
+                setSlotAttr += "      sf.setSlotAttr(" + varUtil.getLocalVarSlot(integer) + ",  v" + string + ");\n";
+                fn += "      SymbolicInteger v" + string + " = makeSymbolicInteger(ti.getEnv(), \"v" + string + "\" + pathLabelCount);\n";
             }
             for(int lhs_SB_i = 0; lhs_SB_i < lhs_SB.size(); lhs_SB_i++) {
                 String tmpStr = lhs_SB.get(lhs_SB_i);
-                fn += "    SymbolicInteger " + tmpStr + " = makeSymbolicInteger(ti.getEnv(), \"" + tmpStr + "\" + pathLabelCount);\n";
+                fn += "      SymbolicInteger " + tmpStr + " = makeSymbolicInteger(ti.getEnv(), \"" + tmpStr + "\" + pathLabelCount);\n";
             }
-            fn += "    SymbolicInteger pathLabel" + pathLabelVarNum +
-                    " = makeSymbolicInteger(ti.getEnv(), \"pathLabel" + pathLabelVarNum+ "\" + pathLabelCount);\n";
-
-            fn += "    pc._addDet(new ComplexNonLinearIntegerConstraint(\n    " + finalPathExpr + "));\n";
-            fn += "    " + setSlotAttr + "\n";
-            fn += "    Instruction insn=instructionToExecute;\n";
-            fn += "    while(insn.getPosition() != " + endingBC + ") {\n";
-            fn += "      if(insn instanceof GOTO)  insn = ((GOTO) insn).getTarget();\n";
-            fn += "      else insn = insn.getNext();\n";
-            fn += "    }\n";
+            fn += "      SymbolicInteger pathLabel" + pathLabelVarNum +
+                    "        = makeSymbolicInteger(ti.getEnv(), \"pathLabel" + pathLabelVarNum+ "\" + pathLabelCount);\n";
+            fn += "      IntegerExpression cnlie = " + finalPathExpr + ";\n";
+            fn += "      cnlie = constantFold(cnlie);\n" +
+                    "      pc._addDet(new ComplexNonLinearIntegerConstraint((ComplexNonLinearIntegerExpression) cnlie));\n";
+            fn += "      " + setSlotAttr + "\n";
+            fn += "      Instruction insn=instructionToExecute;\n";
+            fn += "      while(insn.getPosition() != " + endingBC + ") {\n";
+            fn += "        if(insn instanceof GOTO)  insn = ((GOTO) insn).getTarget();\n";
+            fn += "        else insn = insn.getNext();\n";
+            fn += "      }\n";
             if(!endingInsnsHash.contains(startingBC)) {
-                fn += "    while(numOperands > 0) { sf.pop(); numOperands--; }\n";
+                fn += "      while(numOperands > 0) { sf.pop(); numOperands--; }\n";
             }
-            fn += "    ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).setCurrentPC(pc);\n";
-            fn += "    ti.setNextPC(insn);\n";
-            fn += "    pathLabelCount+=1;\n";
+            fn += "      ((PCChoiceGenerator) ti.getVM().getSystemState().getChoiceGenerator()).setCurrentPC(pc);\n";
+            fn += "      ti.setNextPC(insn);\n";
+            fn += "      pathLabelCount+=1;\n";
+            fn += "    }\n";
             fn += "  }\n";
-            fn += "}\n";
 
             System.out.println(fn);
             endingInsnsHash.add(endingBC);
@@ -227,8 +229,6 @@ public class VeritestingMain {
                     myIVisitor = new MyIVisitor(varUtil);
                     currUnit.getLastInstruction().visit(myIVisitor);
 
-                    String if_SPFExpr = myIVisitor.getIfExprStr_SPF();
-                    String ifNot_SPFExpr = myIVisitor.getIfNotExprStr_SPF();
                     ISSABasicBlock thenUnit = succs.get(0);
                     ISSABasicBlock elseUnit = succs.get(1);
                     if(isLoopStart(currUnit)) {
@@ -274,7 +274,7 @@ public class VeritestingMain {
 
                         if(thenUnit == endingUnit) break;
                     }
-                    // Create thenExpr
+                    // Create elseExpr
                     while(canVeritest && elseUnit != commonSucc) {
                         // System.out.println("BOTag = " + ((Stmt)elseUnit).getTag("BytecodeOffsetTag") +
                         //     ", h.size() = " + h.size());
@@ -287,11 +287,11 @@ public class VeritestingMain {
                                 System.out.println("Cannot veritest SSAInstruction: " + myIVisitor.getLastInstruction());
                                 break;
                             }
-                            String thenExpr1 = myIVisitor.getSPFExpr();
-                            if(thenExpr1 != null && !thenExpr1.equals("")) {
-                                if (!thenExpr.equals(""))
-                                    thenExpr = StringUtil.SPFLogicalAnd(thenExpr, thenExpr1);
-                                else thenExpr = thenExpr1;
+                            String elseExpr1 = myIVisitor.getSPFExpr();
+                            if(elseExpr1 != null && !elseExpr1.equals("")) {
+                                if (!elseExpr.equals(""))
+                                    elseExpr = StringUtil.SPFLogicalAnd(elseExpr, elseExpr1);
+                                else elseExpr = elseExpr1;
                             }
                         }
                         if(!canVeritest) break;
@@ -304,7 +304,7 @@ public class VeritestingMain {
                     // Assign pathLabel a value in the elseExpr
                     if(canVeritest)
                         printSPFExpr(thenExpr, elseExpr, thenPLAssignSPF, elsePLAssignSPF,
-                                if_SPFExpr, ifNot_SPFExpr, currUnit, commonSucc);
+                                currUnit, commonSucc);
                     currUnit = commonSucc;
                 } else {
                     System.out.println("more than 2 successors unhandled in stmt = " + currUnit);

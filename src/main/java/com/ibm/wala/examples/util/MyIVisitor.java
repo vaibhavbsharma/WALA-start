@@ -1,9 +1,11 @@
 package com.ibm.wala.examples.util;
 
+import com.ibm.wala.shrikeBT.IBinaryOpInstruction;
 import com.ibm.wala.shrikeBT.IConditionalBranchInstruction;
 import com.ibm.wala.ssa.*;
 
-import java.util.List;
+
+import static com.ibm.wala.shrikeBT.IBinaryOpInstruction.Operator.*;
 
 
 public class MyIVisitor implements SSAInstruction.IVisitor {
@@ -20,7 +22,7 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
 
     private boolean canVeritest;
 
-    public String getIfExprStr_SPF() {
+    /*public String getIfExprStr_SPF() {
         return ifExprStr_SPF;
     }
 
@@ -28,7 +30,7 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
         return ifNotExprStr_SPF;
     }
 
-    private String ifExprStr_SPF, ifNotExprStr_SPF;
+    private String ifExprStr_SPF, ifNotExprStr_SPF;*/
 
     private String SPFExpr;
 
@@ -62,8 +64,41 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
     public void visitBinaryOp(SSABinaryOpInstruction instruction) {
         System.out.println("SSABinaryOpInstruction = " + instruction);
         lastInstruction = instruction;
+        assert(instruction.getNumberOfUses()==2);
+        assert(instruction.getNumberOfDefs()==1);
+        assert(instruction.mayBeIntegerOp()==true);
+        int lhs = instruction.getDef();
+        int operand1 = instruction.getUse(0);
+        int operand2 = instruction.getUse(1);
+        varUtil.addVal(operand1);
+        varUtil.addVal(operand2);
+        varUtil.addIntermediateVar(lhs);
+        String operand1String = new String("v" + operand1), operand2String = new String("v" + operand2);
+        String lhsString = new String("v" + lhs);
+        if(varUtil.isConstant(operand1))
+            operand1String = new String("new IntegerConstant(" + varUtil.getConstant(operand1) + ")");
+        if(varUtil.isConstant(operand2))
+            operand2String = new String("new IntegerConstant(" + varUtil.getConstant(operand2) + ")");
+        assert(!varUtil.isConstant(lhs));
+        String operatorString = new String();
+        // ADD, SUB, MUL, DIV, REM, AND, OR, XOR
+        switch((IBinaryOpInstruction.Operator) instruction.getOperator()) {
+            case ADD: operatorString = "PLUS"; break;
+            case SUB: operatorString = "MINUS"; break;
+            case MUL: operatorString = "MINUS"; break;
+            case DIV: operatorString = "MUL"; break;
+            case REM: operatorString = "REM"; break;
+            case AND: operatorString = "AND"; break;
+            case OR: operatorString = "OR"; break;
+            case XOR: operatorString = "XOR"; break;
+            default:
+                System.out.println("unsupported operator (" + instruction.getOperator() + ") in SSABinaryOpInstruction");
+                assert(false);
+        }
+        SPFExpr = varUtil.nCNLIE + "(" + lhsString + ", EQ, " +
+                varUtil.nCNLIE + "(" + operand1String + ", " + operatorString + ", " + operand2String + ") )";
         //TODO: make SPFExpr
-        canVeritest = false;
+        canVeritest = true;
     }
 
     @Override
@@ -92,7 +127,11 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
     public void visitConditionalBranch(SSAConditionalBranchInstruction instruction) {
         System.out.println("SSAConditionalBranchInstruction = " + instruction);
         lastInstruction = instruction;
-        if(!instruction.isIntegerComparison()) { canVeritest=false; return; }
+        if(!instruction.isIntegerComparison()) {
+            System.out.println("can only veritest with integer comparison-containing conditional branch instructions\n");
+            canVeritest=false;
+            return;
+        }
         IConditionalBranchInstruction.IOperator op = instruction.getOperator();
         String opString = new String();
         String opNotString = new String();
@@ -115,14 +154,16 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
             opString = "GT";
             opNotString = "LE";
         }
-        ifExprStr_SPF = "new ComplexNonLinearIntegerExpression(" +
+        /*ifExprStr_SPF = "new ComplexNonLinearIntegerExpression(" +
                 varUtil.getValueString(instruction.getUse(0)) + ", " + opString + ", " +
                 varUtil.getValueString(instruction.getUse(1)) + ")";
         ifNotExprStr_SPF = "new ComplexNonLinearIntegerExpression(" +
                 varUtil.getValueString(instruction.getUse(0)) + ", " + opNotString + ", " +
                 varUtil.getValueString(instruction.getUse(1)) + ")";
-        varUtil.addVal(instruction.getUse(0));
-        varUtil.addVal(instruction.getUse(1));
+        // get their definitions if they are intermediates and construct them
+        // using symbolic formulas
+        varUtil.addConditionalVal(instruction.getUse(0));
+        varUtil.addConditionalVal(instruction.getUse(1));*/
         canVeritest=true;
     }
 
@@ -218,6 +259,7 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
         assert(varUtil.ir.getSymbolTable().isConstant(instruction.getDef(0)) == false);
         varUtil.addVal(instruction.getUse(0));
         varUtil.addVal(instruction.getUse(1));
+        //TODO: other instructions may also update local variables
         varUtil.addDefVal(instruction.getDef(0));
     }
 
@@ -247,7 +289,7 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
     }
 
     public String getLastInstruction() {
-        return getLastInstruction().toString();
+        return lastInstruction.toString();
     }
 
     public String getPhiExprSPF(String thenPLAssignSPF, String elsePLAssignSPF) {

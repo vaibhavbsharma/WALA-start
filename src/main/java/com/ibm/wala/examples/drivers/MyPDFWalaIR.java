@@ -427,7 +427,6 @@ public class MyPDFWalaIR {
       return PDFViewUtil.ghostviewIR(cha, ir, psFile, dotFile, dotExe, gvExe);
 
     } catch (WalaException e) {
-      // TODO Auto-generated catch block
       e.printStackTrace();
       return null;
     } catch (InvalidClassFileException e) {

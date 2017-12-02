@@ -47,7 +47,7 @@ import static com.ibm.wala.cast.js.util.Util.*;
 import static com.ibm.wala.cast.util.Util.checkForFrontEndErrors;
 
 /**
- * TODO this class is a mess. rewrite.
+ * this class is a mess. rewrite.
  */
 public class JSCallGraphBuilderUtil extends com.ibm.wala.cast.js.ipa.callgraph.JSCallGraphUtil {
 
