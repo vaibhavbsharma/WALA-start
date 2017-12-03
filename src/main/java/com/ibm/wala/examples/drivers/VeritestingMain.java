@@ -23,7 +23,7 @@ import com.ibm.wala.util.graph.dominators.NumberedDominators;
 import com.ibm.wala.util.io.FileProvider;
 import com.ibm.wala.util.strings.StringStuff;
 import com.ibm.wala.examples.util.VarUtil;
-import sun.tools.jconsole.Plotter;
+import static org.junit.Assert.*;
 import x10.wala.util.NatLoop;
 import x10.wala.util.NatLoopSolver;
 
@@ -243,7 +243,7 @@ public class VeritestingMain {
                     String thenExpr="", elseExpr="";
                     final int thenPathLabel = StringUtil.getPathCounter();
                     final int elsePathLabel = StringUtil.getPathCounter();
-                    ISSABasicBlock thenPred = null, elsePred = null;
+                    ISSABasicBlock thenPred = thenUnit, elsePred = elseUnit;
                     int thenUseNum=-1, elseUseNum=-1;
                     final String thenPLAssignSPF =
                             StringUtil.nCNLIE + "pathLabel" + pathLabelVarNum +
@@ -277,9 +277,11 @@ public class VeritestingMain {
                         if(cfg.getNormalSuccessors(thenUnit).size() > 1) { canVeritest = false; break; }
                         thenPred = thenUnit;
                         thenUnit = cfg.getNormalSuccessors(thenUnit).iterator().next();
-
                         if(thenUnit == endingUnit) break;
                     }
+                    // if there is no "then" side, then set then's predecessor to currUnit
+                    if(canVeritest && (thenPred == commonSucc)) thenPred = currUnit;
+
                     // Create elseExpr
                     while(canVeritest && elseUnit != commonSucc) {
                         // System.out.println("BOTag = " + ((Stmt)elseUnit).getTag("BytecodeOffsetTag") +
@@ -307,11 +309,13 @@ public class VeritestingMain {
 
                         if(elseUnit == endingUnit) break;
                     }
+                    // if there is no "else" side, then set else's predecessor to currUnit
+                    if(canVeritest && (elsePred == commonSucc)) elsePred = currUnit;
 
                     // Assign pathLabel a value in the elseExpr
                     if(canVeritest) {
-                        assert(thenPred != null);
-                        assert(elsePred != null);
+                        assertNotNull("thenPred cannot be null", thenPred);
+                        assertNotNull("elsePred cannot be null", elsePred);
                         thenUseNum = Util.whichPred(cfg, thenPred, commonSucc);
                         elseUseNum = Util.whichPred(cfg, elsePred, commonSucc);
                         printSPFExpr(thenExpr, elseExpr, thenPLAssignSPF, elsePLAssignSPF,
