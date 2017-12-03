@@ -1,5 +1,6 @@
 package com.ibm.wala.examples.util;
 
+import com.ibm.wala.cfg.Util;
 import com.ibm.wala.shrikeBT.IBinaryOpInstruction;
 import com.ibm.wala.shrikeBT.IConditionalBranchInstruction;
 import com.ibm.wala.ssa.*;
@@ -9,11 +10,13 @@ import static com.ibm.wala.shrikeBT.IBinaryOpInstruction.Operator.*;
 
 
 public class MyIVisitor implements SSAInstruction.IVisitor {
+    private final int thenUseNum;
+    private final int elseUseNum;
     boolean isPhiInstruction = false;
     VarUtil varUtil;
     SSAInstruction lastInstruction;
-    private String phiExpr0;
-    private String phiExpr1;
+    private String phiExprThen;
+    private String phiExprElse;
     private String phiExprLHS;
 
     public boolean canVeritest() {
@@ -34,8 +37,10 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
 
     private String SPFExpr;
 
-    public MyIVisitor(VarUtil _varUtil) {
+    public MyIVisitor(VarUtil _varUtil, int _thenUseNum, int _elseUseNum) {
         varUtil = _varUtil;
+        thenUseNum = _thenUseNum;
+        elseUseNum = _elseUseNum;
         SPFExpr = new String();
     }
 
@@ -97,7 +102,6 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
         }
         SPFExpr = varUtil.nCNLIE + "(" + lhsString + ", EQ, " +
                 varUtil.nCNLIE + "(" + operand1String + ", " + operatorString + ", " + operand2String + ") )";
-        //TODO: make SPFExpr
         canVeritest = true;
     }
 
@@ -132,7 +136,7 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
             canVeritest=false;
             return;
         }
-        IConditionalBranchInstruction.IOperator op = instruction.getOperator();
+        /*IConditionalBranchInstruction.IOperator op = instruction.getOperator();
         String opString = new String();
         String opNotString = new String();
         if (op.equals(IConditionalBranchInstruction.Operator.NE)) {
@@ -154,7 +158,7 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
             opString = "GT";
             opNotString = "LE";
         }
-        /*ifExprStr_SPF = "new ComplexNonLinearIntegerExpression(" +
+        ifExprStr_SPF = "new ComplexNonLinearIntegerExpression(" +
                 varUtil.getValueString(instruction.getUse(0)) + ", " + opString + ", " +
                 varUtil.getValueString(instruction.getUse(1)) + ")";
         ifNotExprStr_SPF = "new ComplexNonLinearIntegerExpression(" +
@@ -251,15 +255,16 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
         lastInstruction = instruction;
         assert(instruction.getNumberOfUses()==2);
         assert(instruction.getNumberOfDefs()==1);
-        //TODO: phiExpr1 is derived from use 0 for now, this is an ugly hack
-        // and may not always be correct
-        phiExpr1 = varUtil.getValueString(instruction.getUse(0));
-        phiExpr0 = varUtil.getValueString(instruction.getUse(1));
+
+        assert(thenUseNum != -1);
+        assert(elseUseNum != -1);
+        phiExprThen = varUtil.getValueString(instruction.getUse(thenUseNum));
+        phiExprElse = varUtil.getValueString(instruction.getUse(elseUseNum));
         phiExprLHS = varUtil.getValueString(instruction.getDef(0));
         assert(varUtil.ir.getSymbolTable().isConstant(instruction.getDef(0)) == false);
         varUtil.addVal(instruction.getUse(0));
         varUtil.addVal(instruction.getUse(1));
-        //TODO: other instructions may also update local variables
+        //while other instructions may also update local variables, those should always become intermediate variables
         varUtil.addDefVal(instruction.getDef(0));
     }
 
@@ -293,17 +298,17 @@ public class MyIVisitor implements SSAInstruction.IVisitor {
     }
 
     public String getPhiExprSPF(String thenPLAssignSPF, String elsePLAssignSPF) {
-        assert(phiExpr0 != null && phiExpr0 != "");
-        assert(phiExpr1 != null && phiExpr1 != "");
+        assert(phiExprThen != null && phiExprThen != "");
+        assert(phiExprElse != null && phiExprElse != "");
         assert(phiExprLHS != null && phiExprLHS != "");
-        String phiExpr0_s = StringUtil.nCNLIE + phiExprLHS + ", EQ, " + phiExpr0 + ")";
-        String phiExpr1_s = StringUtil.nCNLIE + phiExprLHS + ", EQ, " + phiExpr1 + ")";
-        // (pathLabel == 1 && lhs == phiExpr0) || (pathLabel == 2 && lhs == phiExpr1)
+        String phiExprThen_s = StringUtil.nCNLIE + phiExprLHS + ", EQ, " + phiExprThen + ")";
+        String phiExprElse_s = StringUtil.nCNLIE + phiExprLHS + ", EQ, " + phiExprElse + ")";
+        // (pathLabel == 1 && lhs == phiExprThen) || (pathLabel == 2 && lhs == phiExprElse)
         return StringUtil.SPFLogicalOr(
                 StringUtil.SPFLogicalAnd( thenPLAssignSPF,
-                        phiExpr0_s),
+                        phiExprThen_s),
                 StringUtil.SPFLogicalAnd( elsePLAssignSPF,
-                        phiExpr1_s
+                        phiExprElse_s
                 ));
     }
 

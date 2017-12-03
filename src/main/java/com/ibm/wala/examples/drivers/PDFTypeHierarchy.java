@@ -72,7 +72,6 @@ public class PDFTypeHierarchy {
       return PDFViewUtil.launchPDFView(pdfFile, gvExe);
 
     } catch (WalaException e) {
-      // TODO Auto-generated catch block
       e.printStackTrace();
       return null;
     }

@@ -1,4 +1,5 @@
 package com.ibm.wala.examples.drivers;
+import com.ibm.wala.cfg.Util;
 import com.ibm.wala.classLoader.IBytecodeMethod;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.core.tests.callGraph.CallGraphTestUtil;
@@ -93,7 +94,8 @@ public class VeritestingMain {
         public void printSPFExpr(String thenExpr, String elseExpr,
                                  final String thenPLAssignSPF, final String elsePLAssignSPF,
                                  //String if_SPFExpr, String ifNot_SPFExpr,
-                                 ISSABasicBlock currUnit, ISSABasicBlock commonSucc) throws InvalidClassFileException {
+                                 ISSABasicBlock currUnit, ISSABasicBlock commonSucc,
+                                 int thenUseNum, int elseUseNum) throws InvalidClassFileException {
             thenExpr = StringUtil.SPFLogicalAnd(thenExpr, thenPLAssignSPF);
             elseExpr = StringUtil.SPFLogicalAnd(elseExpr, elsePLAssignSPF);
 
@@ -105,7 +107,7 @@ public class VeritestingMain {
 
             String setSlotAttr = new String();
             final ArrayList<String> lhs_SB = new ArrayList();
-            MyIVisitor myIVisitor = new MyIVisitor(varUtil);
+            MyIVisitor myIVisitor = new MyIVisitor(varUtil, thenUseNum, elseUseNum);
             commonSucc.iterator().next().visit(myIVisitor);
             String phiExprSPF = myIVisitor.getPhiExprSPF(thenPLAssignSPF, elsePLAssignSPF);
             int startingBC = ((IBytecodeMethod) (ir.getMethod())).getBytecodeIndex(currUnit.getLastInstructionIndex());
@@ -179,7 +181,7 @@ public class VeritestingMain {
             fn += "      IntegerExpression cnlie = " + finalPathExpr + ";\n";
             fn += "      cnlie = constantFold(cnlie);\n" +
                     "      pc._addDet(new ComplexNonLinearIntegerConstraint((ComplexNonLinearIntegerExpression) cnlie));\n";
-            fn += "      " + setSlotAttr + "\n";
+            fn += setSlotAttr + "\n";
             fn += "      Instruction insn=instructionToExecute;\n";
             fn += "      while(insn.getPosition() != " + endingBC + ") {\n";
             fn += "        if(insn instanceof GOTO)  insn = ((GOTO) insn).getTarget();\n";
@@ -226,11 +228,12 @@ public class VeritestingMain {
                     varUtil.resetUsedLocalVars();
                     varUtil.resetIntermediateVars();
                     // System.out.printf("  #succs = %d\n", succs.size());
-                    myIVisitor = new MyIVisitor(varUtil);
+                    myIVisitor = new MyIVisitor(varUtil, -1, -1);
                     currUnit.getLastInstruction().visit(myIVisitor);
 
-                    ISSABasicBlock thenUnit = succs.get(0);
-                    ISSABasicBlock elseUnit = succs.get(1);
+                    //TODO: Does this also work if there is no else clause in a if statement ?
+                    ISSABasicBlock thenUnit = Util.getTakenSuccessor(cfg, currUnit);
+                    ISSABasicBlock elseUnit = Util.getNotTakenSuccessor(cfg, currUnit);
                     if(isLoopStart(currUnit)) {
                         doAnalysis(thenUnit, null);
                         doAnalysis(elseUnit, null);
@@ -240,6 +243,8 @@ public class VeritestingMain {
                     String thenExpr="", elseExpr="";
                     final int thenPathLabel = StringUtil.getPathCounter();
                     final int elsePathLabel = StringUtil.getPathCounter();
+                    ISSABasicBlock thenPred = null, elsePred = null;
+                    int thenUseNum=-1, elseUseNum=-1;
                     final String thenPLAssignSPF =
                             StringUtil.nCNLIE + "pathLabel" + pathLabelVarNum +
                                     ", EQ, new IntegerConstant(" + thenPathLabel + "))";
@@ -254,7 +259,7 @@ public class VeritestingMain {
                         //     ", h.size() = " + h.size());
                         Iterator<SSAInstruction> ssaInstructionIterator = thenUnit.iterator();
                         while(ssaInstructionIterator.hasNext()) {
-                            myIVisitor = new MyIVisitor(varUtil);
+                            myIVisitor = new MyIVisitor(varUtil, -1, -1);
                             ssaInstructionIterator.next().visit(myIVisitor);
                             if(!myIVisitor.canVeritest()) {
                                 canVeritest = false;
@@ -270,6 +275,7 @@ public class VeritestingMain {
                         }
                         if(!canVeritest) break;
                         if(cfg.getNormalSuccessors(thenUnit).size() > 1) { canVeritest = false; break; }
+                        thenPred = thenUnit;
                         thenUnit = cfg.getNormalSuccessors(thenUnit).iterator().next();
 
                         if(thenUnit == endingUnit) break;
@@ -280,7 +286,7 @@ public class VeritestingMain {
                         //     ", h.size() = " + h.size());
                         Iterator<SSAInstruction> ssaInstructionIterator = elseUnit.iterator();
                         while(ssaInstructionIterator.hasNext()) {
-                            myIVisitor = new MyIVisitor(varUtil);
+                            myIVisitor = new MyIVisitor(varUtil, -1, -1);
                             ssaInstructionIterator.next().visit(myIVisitor);
                             if(!myIVisitor.canVeritest()) {
                                 canVeritest = false;
@@ -296,15 +302,21 @@ public class VeritestingMain {
                         }
                         if(!canVeritest) break;
                         if(cfg.getNormalSuccessors(elseUnit).size() > 1) { canVeritest = false; break; }
+                        elsePred = elseUnit;
                         elseUnit = cfg.getNormalSuccessors(elseUnit).iterator().next();
 
                         if(elseUnit == endingUnit) break;
                     }
 
                     // Assign pathLabel a value in the elseExpr
-                    if(canVeritest)
+                    if(canVeritest) {
+                        assert(thenPred != null);
+                        assert(elsePred != null);
+                        thenUseNum = Util.whichPred(cfg, thenPred, commonSucc);
+                        elseUseNum = Util.whichPred(cfg, elsePred, commonSucc);
                         printSPFExpr(thenExpr, elseExpr, thenPLAssignSPF, elsePLAssignSPF,
-                                currUnit, commonSucc);
+                                currUnit, commonSucc, thenUseNum, elseUseNum);
+                    }
                     currUnit = commonSucc;
                 } else {
                     System.out.println("more than 2 successors unhandled in stmt = " + currUnit);
