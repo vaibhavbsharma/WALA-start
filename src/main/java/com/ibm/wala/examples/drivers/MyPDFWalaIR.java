@@ -126,7 +126,7 @@ public class MyPDFWalaIR {
       // Build an AnalysisScope which represents the set of classes to analyze.  In particular,
       // we will analyze the contents of the appJar jar file and the Java standard libraries.
       AnalysisScope scope = AnalysisScopeReader.makeJavaBinaryAnalysisScope(appJar, (new FileProvider())
-              .getFile(CallGraphTestUtil.REGRESSION_EXCLUSIONS));
+              .getFile("MyJava60RegressionExclusions.txt"));
 
       // Build a class hierarchy representing all classes to analyze.  This step will read the class
       // files and organize them into a tree.
@@ -385,7 +385,7 @@ public class MyPDFWalaIR {
           }
         }*/
       // Report immediate post-dominator of every basic block
-      Iterator<ISSABasicBlock> issaBasicBlockIterator = cfg.iterator();
+      /*Iterator<ISSABasicBlock> issaBasicBlockIterator = cfg.iterator();
       while(issaBasicBlockIterator.hasNext()) {
         ISSABasicBlock bb = issaBasicBlockIterator.next();
         if (bb != null) {
@@ -400,7 +400,7 @@ public class MyPDFWalaIR {
       Collections.sort(domStr.subList(1, domStr.size()));
       for (int i = 0; i < domStr.size(); i++) {
         System.out.println(domStr.get(i));
-      }
+      }*/
 
       System.out.println("printing loops now");
       NumberedDominators<ISSABasicBlock> uninverteddom = (NumberedDominators<ISSABasicBlock>) Dominators.make(cfg, cfg.entry());
