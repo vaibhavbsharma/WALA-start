@@ -1,0 +1,21 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="TestVeritestingPerf.countBitsSet" type="Application" factoryName="Application">
+    <extension name="coverage" enabled="false" merge="false" sample_coverage="true" runner="idea" />
+    <option name="MAIN_CLASS_NAME" value="com.ibm.wala.examples.drivers.VeriPDFWalaIR" />
+    <option name="VM_PARAMETERS" value="" />
+    <option name="PROGRAM_PARAMETERS" value="-appJar TestVeritestingPerf.class -sig gov.nasa.jpf.symbc.TestVeritestingPerf.countBitsSet(I)I -noreplaceThrow" />
+    <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
+    <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="false" />
+    <option name="ALTERNATIVE_JRE_PATH" />
+    <option name="ENABLE_SWING_INSPECTOR" value="false" />
+    <option name="ENV_VARIABLES" />
+    <option name="PASS_PARENT_ENVS" value="true" />
+    <module name="My-WALA-start_main" />
+    <envs>
+      <env name="TARGET_CLASSPATH" value="../jpf-core-veritesting/build/RunJPF.jar:../jpf-core-veritesting/build/jpf.jar:../jpf-symbc-veritesting/build/jpf-symbc.jar:../jpf-symbc-veritesting/build/tests/:../jpf-symbc-veritesting/build/tests/gov/nasa/jpf/symbc/" />
+    </envs>
+    <method>
+      <option name="Make" enabled="false" />
+    </method>
+  </configuration>
+</component>
