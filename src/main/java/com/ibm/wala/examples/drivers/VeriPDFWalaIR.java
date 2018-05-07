@@ -1,3 +1,5 @@
+package com.ibm.wala.examples.drivers;
+
 /*******************************************************************************
  * Copyright (c) 2002 - 2006 IBM Corporation.
  * All rights reserved. This program and the accompanying materials
@@ -8,11 +10,11 @@
  * Contributors:
  *     IBM Corporation - initial API and implementation
  *******************************************************************************/
-package com.ibm.wala.examples.drivers;
+
 
 import com.ibm.wala.classLoader.IBytecodeMethod;
 import com.ibm.wala.classLoader.IMethod;
-import com.ibm.wala.core.tests.callGraph.CallGraphTestUtil;
+import com.ibm.wala.classLoader.ShrikeCTMethod;
 import com.ibm.wala.examples.properties.WalaExamplesProperties;
 import com.ibm.wala.ipa.callgraph.AnalysisCacheImpl;
 import com.ibm.wala.ipa.callgraph.AnalysisOptions;
@@ -22,31 +24,36 @@ import com.ibm.wala.ipa.callgraph.impl.Everywhere;
 import com.ibm.wala.ipa.cha.ClassHierarchy;
 import com.ibm.wala.ipa.cha.ClassHierarchyFactory;
 import com.ibm.wala.properties.WalaProperties;
-import com.ibm.wala.shrikeCT.ClassReader;
-import com.ibm.wala.shrikeCT.CodeReader;
+import com.ibm.wala.shrikeBT.IInstruction;
+import com.ibm.wala.shrikeBT.PopInstruction;
+import com.ibm.wala.shrikeBT.ThrowInstruction;
+//import com.ibm.wala.shrikeCT.ClassReader;
+//import com.ibm.wala.shrikeCT.CodeReader;
 import com.ibm.wala.shrikeCT.InvalidClassFileException;
-import com.ibm.wala.shrikeCT.LocalVariableTableReader;
+//import com.ibm.wala.shrikeCT.LocalVariableTableReader;
 import com.ibm.wala.ssa.*;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.util.WalaException;
 import com.ibm.wala.util.config.AnalysisScopeReader;
 import com.ibm.wala.util.debug.Assertions;
-import com.ibm.wala.util.graph.dominators.Dominators;
-import com.ibm.wala.util.graph.dominators.NumberedDominators;
+//import com.ibm.wala.util.graph.dominators.Dominators;
+//import com.ibm.wala.util.graph.dominators.NumberedDominators;
 import com.ibm.wala.util.io.FileProvider;
 import com.ibm.wala.util.strings.StringStuff;
 import com.ibm.wala.viz.PDFViewUtil;
-import org.apache.commons.io.IOUtils;
-import x10.wala.util.NatLoop;
-import x10.wala.util.NatLoopSolver;
+//import org.apache.commons.io.IOUtils;
+//import x10.wala.util.NatLoop;
+//import x10.wala.util.NatLoopSolver;
 
 import java.io.*;
-import java.util.*;
+import java.util.ArrayList;
+//import java.util.HashSet;
+import java.util.Properties;
 
 /**
  * This simple example application builds a WALA IR and fires off a PDF viewer to visualize a DOT representation.
  */
-public class MyPDFWalaIR {
+public class VeriPDFWalaIR {
 
   final public static String PDF_FILE = "ir.pdf";
 
@@ -56,7 +63,7 @@ public class MyPDFWalaIR {
    * "java_cup.lexer.advance()V"
    */
   public static void main(String[] args) throws IOException {
-    printVarTable();
+//        printVarTable();
     run(args);
   }
 
@@ -67,47 +74,47 @@ public class MyPDFWalaIR {
    */
   public static Process run(String[] args) throws IOException {
     validateCommandLine(args);
-    return run(args[1], args[3]);
+    return run(args[1], args[3], args[4].equals("-replaceThrow"));
   }
 
-  public static void printVarTable() throws FileNotFoundException {
-    String workingDir = System.getProperty("user.dir");
-    File temp = new File(workingDir+"/resources/", "VeritestingPerf.class");
-    InputStream stream =  new FileInputStream(temp);
+  public static void printVarTable() {//throws FileNotFoundException {
+        /*String workingDir = System.getProperty("user.dir");
+        File temp = new File(workingDir+"/resources/", "VeritestingPerf.class");
+        InputStream stream =  new FileInputStream(temp);
 
-    System.out.print("workingDir = " + workingDir);
-    //InputStream stream = getResourceAsStream("VeritestingPerf.class");
-    if (stream == null)
-      System.out.println("Cannot find class file.");
+        System.out.print("workingDir = " + workingDir);
+        //InputStream stream = getResourceAsStream("VeritestingPerf.class");
+        if (stream == null)
+            System.out.println("Cannot find class file.");
 
-    try {
-      byte[] streambytes = IOUtils.toByteArray(stream);
-      ClassReader reader = null;
-      reader = new ClassReader(streambytes);
-      int numberOfMethods = reader.getMethodCount();
-      int numberOfFields = reader.getFieldCount();
-      System.out.println("number of methods in class is " + numberOfMethods +
-              " and the number of fields are: " + numberOfFields);
+        try {
+            byte[] streambytes = IOUtils.toByteArray(stream);
+            ClassReader reader = null;
+            reader = new ClassReader(streambytes);
+            int numberOfMethods = reader.getMethodCount();
+            int numberOfFields = reader.getFieldCount();
+            System.out.println("number of methods in class is " + numberOfMethods +
+                    " and the number of fields are: " + numberOfFields);
 
-      for (int i = 0; i < numberOfMethods; i++) {
-        System.out.println("now printing field information. Method name = " + reader.getMethodName(i));
-        ClassReader.AttrIterator iter = new ClassReader.AttrIterator();
-        reader.initMethodAttributeIterator(i, iter);
-        CodeReader codeReader = new CodeReader(iter);
+            for (int i = 0; i < numberOfMethods; i++) {
+                System.out.println("now printing field information. Method name = " + reader.getMethodName(i));
+                ClassReader.AttrIterator iter = new ClassReader.AttrIterator();
+                reader.initMethodAttributeIterator(i, iter);
+                CodeReader codeReader = new CodeReader(iter);
 
-        if (iter == null)
-          System.out.println("No methods for this class.");
-        else {
-          for (; iter.isValid(); iter.advance()) {
-            System.out.println("printing bytecode here" + codeReader.getMaxLocals());
-            int[][] vartable = LocalVariableTableReader.makeVarMap(codeReader);
-            System.out.println(vartable);
-          }
-        }
-      }
-    } catch (Exception e) {
-      e.printStackTrace();
-    }
+                if (iter == null)
+                    System.out.println("No methods for this class.");
+                else {
+                    for (; iter.isValid(); iter.advance()) {
+                        System.out.println("printing bytecode here" + codeReader.getMaxLocals());
+                        int[][] vartable = LocalVariableTableReader.makeVarMap(codeReader);
+                        System.out.println(vartable);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }*/
   }
 
 
@@ -116,7 +123,7 @@ public class MyPDFWalaIR {
    * @param methodSig should be something like "java_cup.lexer.advance()V"
    * @throws IOException
    */
-  public static Process run(String appJar, String methodSig) throws IOException {
+  public static Process run(String appJar, String methodSig, boolean replaceThrow) throws IOException {
     try {
       if (PDFCallGraph.isDirectory(appJar)) {
         appJar = PDFCallGraph.findJarFiles(new String[] { appJar });
@@ -140,10 +147,22 @@ public class MyPDFWalaIR {
       if (m == null) {
         Assertions.UNREACHABLE("could not resolve " + mr);
       }
+      if ((m instanceof ShrikeCTMethod) && replaceThrow) {
+        ShrikeCTMethod castMethod = (ShrikeCTMethod)m;
+        IInstruction[] shrikeInstructions = castMethod.getInstructions();
+        for (IInstruction instr: shrikeInstructions) {
+          if (instr instanceof ThrowInstruction) {
+            System.out.println("found a replaceable instruction");
+            castMethod.replaceInstruction(instr, PopInstruction.make(1));
+          }
+        }
+      }
 
       // Report bytecode offsets for all instructions
-      for(int i=0; i < ((IBytecodeMethod) m).getInstructions().length; i++) {
-        System.out.println("bytecode offset(" + i + ", " + ((IBytecodeMethod) m).getInstructions()[i].toString() + ") = " + ((IBytecodeMethod) m).getBytecodeIndex(i));
+      for(int i=0; i < ((IBytecodeMethod<IInstruction>) m).getInstructions().length; i++) {
+        System.out.println("bytecode offset(" + i + ", " +
+                ((IBytecodeMethod<IInstruction>) m).getInstructions()[i].toString() +
+                ") = " + ((IBytecodeMethod<IInstruction>) m).getBytecodeIndex(i));
       }
 
       // Set up options which govern analysis choices.  In particular, we will use all Pi nodes when
@@ -155,7 +174,7 @@ public class MyPDFWalaIR {
       IAnalysisCacheView cache = new AnalysisCacheImpl(options.getSSAOptions());
 
       // Build the IR and cache it.
-      IR ir = cache.getIR(m, Everywhere.EVERYWHERE);
+      final IR ir = cache.getIR(m, Everywhere.EVERYWHERE);
 
       if (ir == null) {
         Assertions.UNREACHABLE("Null IR for " + m);
@@ -402,14 +421,14 @@ public class MyPDFWalaIR {
         System.out.println(domStr.get(i));
       }*/
 
-      System.out.println("printing loops now");
-      NumberedDominators<ISSABasicBlock> uninverteddom = (NumberedDominators<ISSABasicBlock>) Dominators.make(cfg, cfg.entry());
-      HashSet<NatLoop> loops = new HashSet<>();
-      HashSet<Integer> visited = new HashSet<>();
+            /*System.out.println("printing loops now");
+            NumberedDominators<ISSABasicBlock> uninverteddom = (NumberedDominators<ISSABasicBlock>) Dominators.make(cfg, cfg.entry());
+            HashSet<NatLoop> loops = new HashSet<>();
+            HashSet<Integer> visited = new HashSet<>();
 
-      NatLoopSolver.findAllLoops(cfg, uninverteddom,loops,visited,cfg.getNode(0));
-      NatLoopSolver.printAllLoops(loops);
-      System.out.println("printing loops done");
+            NatLoopSolver.findAllLoops(cfg, uninverteddom,loops,visited,cfg.getNode(0));
+            NatLoopSolver.printAllLoops(loops);
+            System.out.println("printing loops done");*/
 
       Properties wp = null;
       try {
@@ -449,8 +468,8 @@ public class MyPDFWalaIR {
    * @throws UnsupportedOperationException if command-line is malformed.
    */
   public static void validateCommandLine(String[] args) {
-    if (args.length != 4) {
-      throw new UnsupportedOperationException("must have at exactly 4 command-line arguments");
+    if (args.length != 5) {
+      throw new UnsupportedOperationException("must have at exactly 5 command-line arguments");
     }
     if (!args[0].equals("-appJar")) {
       throw new UnsupportedOperationException("invalid command-line, args[0] should be -appJar, but is " + args[0]);
@@ -460,3 +479,4 @@ public class MyPDFWalaIR {
     }
   }
 }
+
